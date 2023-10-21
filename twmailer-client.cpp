@@ -9,15 +9,23 @@
 #include <string>
 #include <iostream>
 #include <stdexcept>
+#include <cctype>
 
 ///////////////////////////////////////////////////////////////////////////////
+int sendEmail(char buffer[], int size);
+int listemail(char buffer[], int size);
+int readOrDel(char buffer[], int size);
 
 #define BUF 1024
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[])
 {
+    for (int i = 0; i < argc; i++)
+    {
+        std::cerr << argv[i];
+    }
     int create_socket;
     char buffer[BUF];
     struct sockaddr_in address;
@@ -42,16 +50,26 @@ int main(int argc, char **argv)
     memset(&address, 0, sizeof(address)); // init storage with 0
     address.sin_family = AF_INET;         // IPv4
     // https://man7.org/linux/man-pages/man3/htons.3.html
-    in_port_t port;
+   
 
     // checks if agrc is 3 for port
+     in_port_t port;
     try
     {
-        if (argc < 2)
-            throw std::invalid_argument("There are not enough arguemnts.\nPlease enter only the IP-Adress and the port\n");
+        if (argc < 2 || argc > 3)
+            throw std::invalid_argument("There are either not enough arguemnts or too many.\nPlease enter IP-Adress(optional) and the port\n");
 
-        port = std::stoi(argv[2]);
-        std::cerr << port;
+        if(argc == 2)
+        {
+            // https://man7.org/linux/man-pages/man3/inet_aton.3.html
+            inet_aton("127.0.0.1", &address.sin_addr);
+            port = (in_port_t)std::stol(argv[1]);
+        }
+        else
+        {
+            port = (in_port_t)std::stol(argv[2]);
+            inet_aton(argv[1], &address.sin_addr);
+        }
 
         if ((port > 1024)) // port can only be between those two numbers
             address.sin_port = htons(port);
@@ -61,19 +79,9 @@ int main(int argc, char **argv)
         std::cerr << e.what() << '\n';
     }
 
-    // https://man7.org/linux/man-pages/man3/inet_aton.3.html
-    if (argc < 3)
-    {
-        inet_aton("127.0.0.1", &address.sin_addr);
-    }
-    else
-    {
-        inet_aton(argv[1], &address.sin_addr);
-    }
-
-   ////////////////////////////////////////////////////////////////////////////
-   // CREATE A CONNECTION
-   // https://man7.org/linux/man-pages/man2/connect.2.html
+    ////////////////////////////////////////////////////////////////////////////
+    // CREATE A CONNECTION
+    // https://man7.org/linux/man-pages/man2/connect.2.html
     if (connect(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1)
     {
         // https://man7.org/linux/man-pages/man3/perror.3.html
@@ -105,21 +113,34 @@ int main(int argc, char **argv)
     do
     {
         printf(">> ");
+
+        
         if (fgets(buffer, BUF - 1, stdin) != NULL)
         {
             int size = strlen(buffer);
             // remove new-line signs from string at the end
-            if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+            if (buffer[size - 2] == '\r')
             {
-                size -= 2;
+                size -= 1;
                 buffer[size] = 0;
             }
-            else if (buffer[size - 1] == '\n')
-            {
-                --size;
-                buffer[size] = 0;
+            isQuit = strncmp(buffer, "quit\n", sizeof(buffer)) == 0;
+            
+            for (char &c : buffer) {
+                c = std::toupper(c);
             }
-            isQuit = strncmp(buffer, "quit", sizeof(buffer)) == 0;
+            
+            std::string command(buffer);
+            
+            if(command == "SEND\n")
+                size = sendEmail(buffer, size);
+            else if(command == "LIST\n")
+                size = listemail(buffer, size);
+            else if(command == "DEL\n" || command == "READ\n")
+                size = readOrDel(buffer, size);
+            
+
+
 
             //////////////////////////////////////////////////////////////////////
             // SEND DATA
@@ -153,7 +174,13 @@ int main(int argc, char **argv)
             //             server if already processed.
             // solution 2: add an infrastructure component for messaging (broker)
             //
+            if(isQuit != 0)
+            {
+                break;
+            }
+            memset(buffer, 0, sizeof(buffer));
             size = recv(create_socket, buffer, BUF - 1, 0);
+            //std::cout << size << '\n';
             if (size == -1)
             {
                 perror("recv error");
@@ -194,4 +221,62 @@ int main(int argc, char **argv)
     }
 
     return EXIT_SUCCESS;
+}
+
+int sendEmail(char buffer[], int size)
+{
+    size = strlen(buffer); //TODO: newline
+    std::cout << buffer[1] << size << '\n';
+    for(int i = 0; i<2; i++)
+    {
+        if (fgets(buffer + size, BUF - size - 1, stdin) != NULL)
+        {
+            std::cout << buffer;
+        }
+        size = strlen(buffer);
+    }
+    if (fgets(buffer + size, 80, stdin) != NULL)
+    {
+        std::cout << buffer;
+    }
+    size = strlen(buffer);
+    
+    if (fgets(buffer + size, BUF - size -1, stdin) != NULL)
+    {
+        std::cout << buffer;
+    }
+
+    if(strlen(buffer) > BUF)
+    {
+        buffer[BUF - 1] = '\0';
+    }
+    size = strlen(buffer);
+    std::cout << size << '\n';
+
+    return size;
+}
+
+int listemail(char buffer[], int size)
+{
+    if (fgets(buffer + size, BUF - size - 1, stdin) != NULL)
+    {
+        std::cout << buffer;
+    }    
+    size = strlen(buffer);
+
+    return size;
+}
+
+int readOrDel(char buffer[], int size)
+{
+    for(int i = 0; i<2; i++)
+    {
+        if (fgets(buffer + size, BUF - size - 1, stdin) != NULL)
+        {
+            std::cout << buffer;
+        }
+        size = strlen(buffer);
+    }
+
+    return size;
 }
