@@ -32,6 +32,7 @@ void createDir(std::vector<std::string>& parts, const std::string& receiverDir);
 void writeIntoFile(std::vector<std::string>& parts, const std::string& receiverDir);
 void updateIndex(const std::string& filePath, int index);
 void deleteFile(const std::string& pathToFileToDelete);
+int sendingHeader(int* current_socket, int& size);
 std::string readFile(const std::string& pathToFileToRead);
 std::string listFiles(const std::string& receive);
 void *clientCommunication(void *data, std::string spoolDirectory);
@@ -350,8 +351,13 @@ void *clientCommunication(void *data, std::string spoolDirectory)
         }
 
         printf("Message received: %s\n", newBuffer); // ignore error
+        std::cout << message.size() << '\n';
 
-        if (send(*current_socket, message.c_str(), message.size() + 1, 0) == -1)
+        int size = message.size();
+
+        sendingHeader(current_socket, size);
+        
+        if (send(*current_socket, message.c_str(), message.size(), 0) == -1)
         {
             perror("send answer failed");
             return NULL;
@@ -534,14 +540,13 @@ void deleteFile(const std::string& pathToFileToDelete)
     }
 }
 
-std::string readFile(const std::string& pathToFileToDelete)
+std::string readFile(const std::string& pathToFileToRead)
 {
     std::string message = "OK\n";
-    std::ifstream inputFile(pathToFileToDelete); // Datei im Lese-Modus öffnen
+    std::ifstream inputFile(pathToFileToRead); // Datei im Lese-Modus öffnen
     if (inputFile.is_open()) 
-    {
+    {   
         std::string line;
-        
         // Lesen Sie die Datei Zeile für Zeile
         while (std::getline(inputFile, line)) 
         {
@@ -559,4 +564,16 @@ std::string readFile(const std::string& pathToFileToDelete)
     }
 
     return message;
+}
+
+int sendingHeader(int* current_socket, int& size)
+{
+    int len = htons(size);
+    if(send(*current_socket, &len, sizeof(len), 0) == -1)
+    {
+        perror("send failed");
+        return 1;
+    }
+
+    return size;
 }

@@ -200,8 +200,23 @@ int main(int argc, char *argv[])
             {
                 break;
             }
-            memset(buffer, 0, sizeof(buffer));
-            size = recv(create_socket, buffer, BUF - 1, 0);
+            int len = 0, byte = 0;
+            byte = recv(create_socket, &len, sizeof(len), MSG_WAITFORONE);
+            if (byte == -1)
+            {
+                perror("recv error");
+                break;
+            }
+            else if (byte == 0)
+            {
+                printf("Server closed remote socket\n"); // ignore error
+                break;
+            }
+
+            len = ntohs(len);
+            char newBuf[len];
+
+            size = recv(create_socket, newBuf, len, 0);
 
             if (size == -1)
             {
@@ -215,9 +230,9 @@ int main(int argc, char *argv[])
             }
             else
             {
-                buffer[size] = '\0';
-                printf("<< %s\n", buffer); // ignore error
-                if (strcmp("ERR", buffer) == 0)
+                newBuf[size] = '\0';
+                printf("<< %s\n", newBuf); // ignore error
+                if (strcmp("ERR", newBuf) == 0)
                 {
                     fprintf(stderr, "<< Server error occured, abort\n");
                     break;
@@ -247,7 +262,7 @@ int main(int argc, char *argv[])
 
 int sendEmail(std::string& newBuffer, int size, int& create_socket)
 {
-    /* size = strlen(buffer); //TODO: newline
+    /* size = newBuffer.size(); //TODO: newline
     std::cout << buffer[1] << size << '\n';
     for(int i = 0; i<2; i++)
     {
@@ -262,11 +277,11 @@ int sendEmail(std::string& newBuffer, int size, int& create_socket)
     if (fgets(buffer + size, 80, stdin) == NULL)
     {
         return 1;
-    }
-
-    size = strlen(buffer); */
+    } */
     
-    while (true) {/*
+    /*
+    size = strlen(buffer); 
+    
         // Read a line of input using fgets
         if (fgets(buffer + size, BUF - size -1, stdin) == NULL)
         {
@@ -284,9 +299,43 @@ int sendEmail(std::string& newBuffer, int size, int& create_socket)
             buffer[BUF-1] = '\0';
             break;
         } */
+    int counter = 0;
+    while (true) 
+    {
+        switch (counter)
+        {
+        case 0:
+            std::cout << "sender: ";
+            break;
+        case 1:
+            std::cout << "receiver: ";
+            break;
+        case 2:{
+            std::cout << "subject: ";
+            std::string line;
+            std::getline(std::cin, line);
+            if(line.size() > 80)
+                line = line.substr(0, 80);
+            newBuffer.append(line + '\n');
+            break;
+        }
+        case 3:
+            std::cout << "message: ";
+            break;
+        
+        default:
+            break;
+        }
+        if (counter == 2)
+        {
+            counter++;
+            continue;
+        }
+        
         std::string line;
         std::getline(std::cin, line);
         newBuffer.append(line + '\n');
+        counter++;
 
         // Check for termination sequence "\n.\n"
         size = newBuffer.size();
@@ -326,6 +375,7 @@ int sendEmail(std::string& newBuffer, int size, int& create_socket)
 
 int listemail(std::string& newBuffer, int size, int& create_socket)
 {
+    std::cout << "username: ";
     std::string line;
     std::getline(std::cin, line);
     newBuffer.append(line + '\n');
@@ -336,8 +386,12 @@ int listemail(std::string& newBuffer, int size, int& create_socket)
 
 int readOrDel(std::string& newBuffer, int size, int& create_socket)
 {
-    for(int i = 0; i<2; i++)
+    for(int i = 0; i < 2; i++)
     {
+        if(i == 0)
+            std::cout << "username: ";
+        else
+            std::cout << "messagenumber: ";
         std::string line;
         std::getline(std::cin, line);
         newBuffer.append(line + '\n');
