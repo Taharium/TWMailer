@@ -13,6 +13,7 @@
 #include <sstream>
 #include <filesystem>
 #include <vector>
+#include <cstring>
 
 namespace fs = std::filesystem;
 
@@ -27,7 +28,7 @@ int new_socket = -1;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void createDir(const std::string& receiverDir);
+void createDir(std::vector<std::string>& parts, const std::string& receiverDir);
 void writeIntoFile(std::vector<std::string>& parts, const std::string& receiverDir);
 void updateIndex(const std::string& filePath, int index);
 void deleteFile(const std::string& pathToFileToDelete);
@@ -43,9 +44,6 @@ int main(int argc, char *argv[])
     socklen_t addrlen;
     struct sockaddr_in address, cliaddress;
     int reuseValue = 1;
-    std::cout << argv[0] << '\n';
-    std::cout << argv[1] << '\n';
-    std::cout << argv[2] << '\n';
 
     ////////////////////////////////////////////////////////////////////////////
     // SIGNAL HANDLER
@@ -169,24 +167,55 @@ int main(int argc, char *argv[])
 
 void *clientCommunication(void *data, std::string spoolDirectory)
 {
-    char buffer[BUF];
+    std::string buffer;
     int size;
     int *current_socket = (int *)data;
 
     ////////////////////////////////////////////////////////////////////////////
     // SEND welcome message
-    strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
-    if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
+    buffer = "Welcome to myserver!\r\nPlease enter your commands...\r\n";
+    size = buffer.size();
+    if (send(*current_socket, &size, sizeof(size), 0) == -1)
     {
         perror("send failed");
         return NULL;
     }
-
+    //std::strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
+    if (send(*current_socket, buffer.c_str(), buffer.size(), 0) == -1)
+    {
+        perror("send failed");
+        return NULL;
+    }
+    buffer = "";
     do
     {
         /////////////////////////////////////////////////////////////////////////
         // RECEIVE
-        size = recv(*current_socket, buffer, BUF - 1, 0);
+        int len = 0;
+        int byte;
+        byte = recv(*current_socket, &len, sizeof(len), MSG_WAITFORONE);
+        if (byte == -1)
+        {
+            if (abortRequested)
+            {
+                perror("recv error after aborted");
+            }
+            else
+            {
+                perror("recv error");
+            }
+            break;
+        }
+        if (byte == 0)
+        {
+            printf("Client closed remote socket\n"); // ignore error
+            break;
+        }
+        len = ntohs(len);
+        char newBuffer[len];
+
+        size = recv(*current_socket, newBuffer, len, 0);
+
         if (size == -1)
         {
             if (abortRequested)
@@ -199,7 +228,6 @@ void *clientCommunication(void *data, std::string spoolDirectory)
             }
             break;
         }
-
         if (size == 0)
         {
             printf("Client closed remote socket\n"); // ignore error
@@ -207,23 +235,23 @@ void *clientCommunication(void *data, std::string spoolDirectory)
         }
 
         // remove ugly debug message, because of the sent newline of client
-        if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
+        if (newBuffer[size - 2] == '\r' && newBuffer[size - 1] == '\n')
         {
             size -= 2;
         }
-        else if (buffer[size - 1] == '\n')
+        else if (newBuffer[size - 1] == '\n')
         {
             --size;
         }
 
         std::string message = "OK";
-        buffer[size] = '\0';
+        newBuffer[size] = '\0';
         // Read strings separated by '\n' from the input stream
         std::vector<std::string> parts;
         parts.reserve(3);
-        std::istringstream stream(buffer); // Create an input string stream from the buffer
+        std::istringstream stream(newBuffer); // Create an input string stream from the buffer
         std::string line;
-        bool readList = false;
+        //bool readList = false;
         int counter = 0;
         while (std::getline(stream, line, '\n'))
         {
@@ -232,9 +260,9 @@ void *clientCommunication(void *data, std::string spoolDirectory)
             counter++;
         }
 
-        if(strncmp(buffer, "SEND", 4) == 0)
+        if(strncmp(newBuffer, "SEND", 4) == 0)
         {
-            if(counter == 5)
+            if(counter >= 5)
             {
                 std::string receiverDir = spoolDirectory + "/" + parts[2];
                 if(!fs::exists(spoolDirectory))
@@ -242,7 +270,7 @@ void *clientCommunication(void *data, std::string spoolDirectory)
                 
                 if(!fs::exists(receiverDir))
                 {
-                    createDir(receiverDir);
+                    createDir(parts, receiverDir);
                 }
                 else
                 {
@@ -254,7 +282,7 @@ void *clientCommunication(void *data, std::string spoolDirectory)
                 message = "ERR";
             }
         }
-        else if(strncmp(buffer, "LIST", 4) == 0)
+        else if(strncmp(newBuffer, "LIST", 4) == 0)
         {
             if(counter == 2)
             {
@@ -262,7 +290,7 @@ void *clientCommunication(void *data, std::string spoolDirectory)
                 if (fs::is_directory(directoryPath)) 
                 {
                     message = listFiles(directoryPath);
-                    readList = true;
+                    //readList = true;
                 } 
                 else 
                 {
@@ -274,9 +302,9 @@ void *clientCommunication(void *data, std::string spoolDirectory)
                 message = "ERR";
             }
         }
-        else if(strncmp(buffer, "DEL", 3) == 0)
+        else if(strncmp(newBuffer, "DEL", 3) == 0)
         {
-            if(readList && counter == 3)
+            if( counter == 3)
             {
                 std::string pathToFileToDelete = spoolDirectory + "/" + parts[1] + "/" + parts[2] + ".txt";
                 if (fs::exists(pathToFileToDelete)) 
@@ -293,9 +321,9 @@ void *clientCommunication(void *data, std::string spoolDirectory)
                 message = "ERR";
             }
         }
-        else if(strncmp(buffer, "READ", 4) == 0)
+        else if(strncmp(newBuffer, "READ", 4) == 0)
         {
-            if(readList && counter == 3)
+            if(counter == 3)
             {
                 std::string pathToFileToRead = spoolDirectory + "/" + parts[1] + "/" + parts[2] + ".txt";
                 if (fs::exists(pathToFileToRead)) 
@@ -309,17 +337,26 @@ void *clientCommunication(void *data, std::string spoolDirectory)
             }
             else
             {
-                message = "ERR\n Please open LIST at least one time";
+                message = "ERR";
             }
         }
-        printf("Message received: %s\n", buffer); // ignore error
+        else if(strncmp(newBuffer, "QUIT", 4) == 0)
+        {
+            break;
+        }
+        else
+        {
+            message = "ERR";
+        }
+
+        printf("Message received: %s\n", newBuffer); // ignore error
 
         if (send(*current_socket, message.c_str(), message.size() + 1, 0) == -1)
         {
             perror("send answer failed");
             return NULL;
         }
-    } while (strcmp(buffer, "quit") != 0 && !abortRequested);
+    } while (!abortRequested);
 
     // closes/frees the descriptor if not already
     if (*current_socket != -1)
@@ -381,7 +418,7 @@ void signalHandler(int sig)
     }
 }
 
-void createDir(const std::string& receiverDir)
+void createDir(std::vector<std::string>& parts, const std::string& receiverDir)
 {
         // Check if the directory already exists, if not, create it
     try 
@@ -389,6 +426,7 @@ void createDir(const std::string& receiverDir)
         fs::create_directories(receiverDir);
         std::string filePath = receiverDir + "/index.txt";
         updateIndex(filePath, 0);
+        writeIntoFile(parts, receiverDir);
     } 
     catch (const std::exception& e) 
     {
@@ -419,8 +457,14 @@ void writeIntoFile(std::vector<std::string>& parts, const std::string& receiverD
     if (outputFile.is_open()) 
     {
         // Write content to the file
-        for(int i = 1; i < 5; i++)
-            outputFile << parts[i] << '\n';
+        for(size_t i = 1; i < parts.size(); i++)
+        {
+            if(i == parts.size()-1)
+                outputFile << parts[i];
+            else
+                outputFile << parts[i] << '\n';
+        }
+            
         outputFile.close();
     }
     updateIndex(filePathIndex, index);
@@ -441,26 +485,41 @@ std::string listFiles(const std::string& directoryPath)
 {
     std::string message = "";
     int filenameFound = 0;
-    for (const auto& entry : fs::directory_iterator(directoryPath)) 
-    {
-        if (fs::is_regular_file(entry)) 
-        {
-            filenameFound++;
-        }
-    }
-    message = std::to_string(filenameFound - 1) + " messages\n";
     
     for (const auto& entry : fs::directory_iterator(directoryPath)) 
     {
         //TODO: amount of files first zero if directory not found or no messages
         if (fs::is_regular_file(entry) && entry.path().filename().string() != "index.txt") 
         {
-            message = message + entry.path().filename().string() + '\n';
+            filenameFound++;
+            std::ifstream inputFile(entry.path());
+            int lineCount = 0;
+            if (inputFile.is_open()) 
+            {
+                std::string line;
+                while (std::getline(inputFile, line)) 
+                {
+                    ++lineCount;
+
+                    if (lineCount == 3) 
+                    {
+                        //subject and filenumber for list
+                        message.append(line + ' ' + entry.path().filename().stem().string() + '\n');
+                        break;
+                    }
+                }
+            }
+            // Close the file after reading
+            inputFile.close();
         }
     }
-
+    std::string prefix = std::to_string(filenameFound) + " messages\n";
+    message.insert(0, prefix);
+    if(message.back() == '\n')
+        message.pop_back();
     return message;
 }
+
 
 void deleteFile(const std::string& pathToFileToDelete)
 {
@@ -486,11 +545,13 @@ std::string readFile(const std::string& pathToFileToDelete)
         // Lesen Sie die Datei Zeile für Zeile
         while (std::getline(inputFile, line)) 
         {
-            message = message + line + '\n';
+            message.append(line + '\n');
         }
 
         // Schließen Sie die Datei nach dem Lesen
         inputFile.close();
+        if(message.back() == '\n')
+            message.pop_back();
     }
     else
     {

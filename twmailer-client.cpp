@@ -10,11 +10,13 @@
 #include <iostream>
 #include <stdexcept>
 #include <cctype>
+#include <vector>
 
 ///////////////////////////////////////////////////////////////////////////////
-int sendEmail(char buffer[], int size);
-int listemail(char buffer[], int size);
-int readOrDel(char buffer[], int size);
+int sendEmail(std::string& newBuffer, int size, int& create_socket);
+int listemail(std::string& newBuffer, int size, int& create_socket);
+int readOrDel(std::string& newBuffer, int size, int& create_socket);
+int sendingHeader(int& create_socket, int& size);
 
 #define BUF 1024
 
@@ -22,10 +24,6 @@ int readOrDel(char buffer[], int size);
 
 int main(int argc, char *argv[])
 {
-    for (int i = 0; i < argc; i++)
-    {
-        std::cerr << argv[i];
-    }
     int create_socket;
     char buffer[BUF];
     struct sockaddr_in address;
@@ -95,7 +93,23 @@ int main(int argc, char *argv[])
     ////////////////////////////////////////////////////////////////////////////
     // RECEIVE DATA
     // https://man7.org/linux/man-pages/man2/recv.2.html
-    size = recv(create_socket, buffer, BUF - 1, 0);
+    int len = 0;
+    int byte = recv(create_socket, &len, sizeof(len), 0);
+    if (byte == -1)
+    {
+        perror("recv error");
+    }
+    else if (LC_IDENTIFICATION == 0)
+    {
+        printf("Server closed remote socket\n"); // ignore error
+    }
+    else
+    {
+        buffer[len] = '\0';
+        //printf("%d", len); // ignore error
+    }
+
+    size = recv(create_socket, buffer, len, 0);
     if (size == -1)
     {
         perror("recv error");
@@ -109,11 +123,10 @@ int main(int argc, char *argv[])
         buffer[size] = '\0';
         printf("%s", buffer); // ignore error
     }
-
+    memset(buffer, 0, sizeof(buffer));
     do
     {
         printf(">> ");
-
         
         if (fgets(buffer, BUF - 1, stdin) != NULL)
         {
@@ -124,30 +137,39 @@ int main(int argc, char *argv[])
                 size -= 1;
                 buffer[size] = 0;
             }
+            
             isQuit = strncmp(buffer, "quit\n", sizeof(buffer)) == 0;
             
-            for (char &c : buffer) {
+            for (char &c : buffer) 
+            {
                 c = std::toupper(c);
             }
             
             std::string command(buffer);
-            
+            std::string newBuffer(buffer);
             if(command == "SEND\n")
-                size = sendEmail(buffer, size);
+                size = sendEmail(newBuffer, size, create_socket);
             else if(command == "LIST\n")
-                size = listemail(buffer, size);
+                size = listemail(newBuffer, size, create_socket);
             else if(command == "DEL\n" || command == "READ\n")
-                size = readOrDel(buffer, size);
-            
-
-
-
+                size = readOrDel(newBuffer, size, create_socket);
+            else if(command == "QUIT\n")
+            {
+                isQuit = true;
+                int len = newBuffer.size();
+                sendingHeader(create_socket, len);
+            }
+            else
+            {
+                int len = newBuffer.size();
+                sendingHeader(create_socket, len);
+            }
             //////////////////////////////////////////////////////////////////////
             // SEND DATA
             // https://man7.org/linux/man-pages/man2/send.2.html
             // send will fail if connection is closed, but does not set
             // the error of send, but still the count of bytes sent
-            if ((send(create_socket, buffer, size + 1, 0)) == -1)
+            if ((send(create_socket, newBuffer.c_str(), newBuffer.size(), 0)) == -1)
             {
                 // in case the server is gone offline we will still not enter
                 // this part of code: see docs: https://linux.die.net/man/3/send
@@ -180,7 +202,7 @@ int main(int argc, char *argv[])
             }
             memset(buffer, 0, sizeof(buffer));
             size = recv(create_socket, buffer, BUF - 1, 0);
-            //std::cout << size << '\n';
+
             if (size == -1)
             {
                 perror("recv error");
@@ -195,7 +217,7 @@ int main(int argc, char *argv[])
             {
                 buffer[size] = '\0';
                 printf("<< %s\n", buffer); // ignore error
-                if (strcmp("OK", buffer) != 0)
+                if (strcmp("ERR", buffer) == 0)
                 {
                     fprintf(stderr, "<< Server error occured, abort\n");
                     break;
@@ -223,59 +245,115 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-int sendEmail(char buffer[], int size)
+int sendEmail(std::string& newBuffer, int size, int& create_socket)
 {
-    size = strlen(buffer); //TODO: newline
+    /* size = strlen(buffer); //TODO: newline
     std::cout << buffer[1] << size << '\n';
     for(int i = 0; i<2; i++)
     {
-        if (fgets(buffer + size, BUF - size - 1, stdin) != NULL)
+        if (fgets(buffer + size, BUF - size - 1, stdin) == NULL)
         {
-            std::cout << buffer;
+            //retuns 1 (size of buffer tht will be read in server) if there is an error
+            return 1;
         }
         size = strlen(buffer);
     }
-    if (fgets(buffer + size, 80, stdin) != NULL)
+
+    if (fgets(buffer + size, 80, stdin) == NULL)
     {
-        std::cout << buffer;
+        return 1;
     }
-    size = strlen(buffer);
+
+    size = strlen(buffer); */
     
-    if (fgets(buffer + size, BUF - size -1, stdin) != NULL)
-    {
-        std::cout << buffer;
-    }
+    while (true) {/*
+        // Read a line of input using fgets
+        if (fgets(buffer + size, BUF - size -1, stdin) == NULL)
+        {
+            // Discard remaining characters in the input stream
+            int extraLen = 0;
+            int c;
+            std::vector<char> buffer2;
+            buffer2.reserve(BUF);
+            while ((c = getchar()) != '\n' && c != EOF)
+            {
+                extraLen++;
+                buffer2.emplace_back(c);
+            }
 
-    if(strlen(buffer) > BUF)
-    {
-        buffer[BUF - 1] = '\0';
-    }
-    size = strlen(buffer);
-    std::cout << size << '\n';
+            buffer[BUF-1] = '\0';
+            break;
+        } */
+        std::string line;
+        std::getline(std::cin, line);
+        newBuffer.append(line + '\n');
 
-    return size;
+        // Check for termination sequence "\n.\n"
+        size = newBuffer.size();
+        if (size >= 3 && newBuffer[size - 3] == '\n' && newBuffer[size - 2] == '.' && newBuffer[size - 1] == '\n')
+        {
+            break;
+        }
+    }
+    size = newBuffer.size();
+    return sendingHeader(create_socket, size);
+
+
+    /* char message[] = "Ist dies eine sehr lange Nachricht, die in Teilen gesendet werden soll?";
+    int message_length = strlen(message);
+    int bytes_sent = 0;
+    int total_bytes_sent = 0;
+
+    while (total_bytes_sent < message_length) {
+        int remaining_bytes = message_length - total_bytes_sent;
+        int bytes_to_send = (remaining_bytes > BUF) ? BUF : remaining_bytes;
+
+        // Kopieren Sie einen Teil der Nachricht in den Puffer.
+        char buffer[BUF];
+        strncpy(buffer, message + total_bytes_sent, bytes_to_send);
+
+        // Senden Sie den Puffer über die Verbindung.
+        int bytes_just_sent = send(, buffer, bytes_to_send, 0);
+        if (bytes_just_sent == -1) {
+            perror("send");
+            break; // Fehlerbehandlung
+        }
+
+        total_bytes_sent += bytes_just_sent;
+    } */
+
 }
 
-int listemail(char buffer[], int size)
+int listemail(std::string& newBuffer, int size, int& create_socket)
 {
-    if (fgets(buffer + size, BUF - size - 1, stdin) != NULL)
-    {
-        std::cout << buffer;
-    }    
-    size = strlen(buffer);
+    std::string line;
+    std::getline(std::cin, line);
+    newBuffer.append(line + '\n');
+    size = newBuffer.size();
+    return sendingHeader(create_socket, size);
 
-    return size;
 }
 
-int readOrDel(char buffer[], int size)
+int readOrDel(std::string& newBuffer, int size, int& create_socket)
 {
     for(int i = 0; i<2; i++)
     {
-        if (fgets(buffer + size, BUF - size - 1, stdin) != NULL)
-        {
-            std::cout << buffer;
-        }
-        size = strlen(buffer);
+        std::string line;
+        std::getline(std::cin, line);
+        newBuffer.append(line + '\n');
+    }
+    size = newBuffer.size();
+    return sendingHeader(create_socket, size);
+    
+}
+
+int sendingHeader(int& create_socket, int& size)
+{
+    int len = htons(size);
+    if(send(create_socket, &len, sizeof(len), 0) == -1)
+    {
+        perror("send failed");
+        return 1;
     }
 
     return size;
