@@ -15,6 +15,7 @@
 #include <vector>
 #include <cstring>
 #include <algorithm>
+#include <set>
 
 namespace fs = std::filesystem;
 
@@ -495,7 +496,7 @@ std::string listFiles(const std::string& directoryPath)
 {
     std::string message = "";
     int filenameFound = 0;
-
+    std::set<std::string> sortfile;                                 /////////////////////////////// sortieren
     for (const auto& entry : fs::directory_iterator(directoryPath)) 
     {
         //TODO: amount of files first zero if directory not found or no messages

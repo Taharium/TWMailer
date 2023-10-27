@@ -161,6 +161,7 @@ int main(int argc, char *argv[])
             // the error of send, but still the count of bytes sent
             size = newBuffer.size();
             sendingHeader(create_socket, size); // header with length of message
+            //while()
 
             if ((send(create_socket, newBuffer.c_str(), newBuffer.size(), 0)) == -1)
             {
@@ -225,11 +226,11 @@ int main(int argc, char *argv[])
             {
                 newBuf[size] = '\0';
                 printf("<< %s\n", newBuf); // ignore error
-                if (strcmp("ERR", newBuf) == 0)
+                /* if (strcmp("ERR", newBuf) == 0)
                 {
                     fprintf(stderr, "<< Server error occured, abort\n");
                     break;
-                }
+                } */
             }
         }
     } while (!isQuit);
@@ -294,6 +295,7 @@ void sendEmail(std::string& newBuffer)
         int size = newBuffer.size();
         if (size >= 3 && newBuffer[size - 3] == '\n' && newBuffer[size - 2] == '.' && newBuffer[size - 1] == '\n')
         {
+            //nreline and dot entfernen
             break;
         }
     }
