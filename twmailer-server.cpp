@@ -453,7 +453,6 @@ void writeIntoFile(std::vector<std::string>& parts, const std::string& receiverD
     if (inputFile.is_open())  //open index and take the number 
     {
         std::string line;
-        // Read and print each line from the file
         std::getline(inputFile, line);
         index = std::stoi(line);
         // Close the file after reading
@@ -496,10 +495,9 @@ std::string listFiles(const std::string& directoryPath)
 {
     std::string message = "";
     int filenameFound = 0;
-    std::set<std::string> sortfile;                                 /////////////////////////////// sortieren
+    std::set<std::string> sortfile;
     for (const auto& entry : fs::directory_iterator(directoryPath)) 
     {
-        //TODO: amount of files first zero if directory not found or no messages
         if (fs::is_regular_file(entry) && entry.path().filename().string() != "index.txt") 
         {
             filenameFound++;
@@ -515,7 +513,8 @@ std::string listFiles(const std::string& directoryPath)
                     if (lineCount == 3) //take only subject
                     {
                         //subject and filenumber for list
-                        message.append(line + ' ' + entry.path().filename().stem().string() + '\n');
+                        sortfile.insert(line + ' ' + entry.path().filename().stem().string() + '\n');
+                        //message.append(line + ' ' + entry.path().filename().stem().string() + '\n');
                         break;
                     }
                 }
@@ -524,8 +523,14 @@ std::string listFiles(const std::string& directoryPath)
             inputFile.close();
         }
     }
-    std::string prefix = std::to_string(filenameFound) + " messages\n";
-    message.insert(0, prefix);
+    message.append(std::to_string(filenameFound) + " messages\n");
+    for (auto &&i : sortfile)
+    {
+        message.append(i);
+    }
+    
+    /* std::string prefix = std::to_string(filenameFound) + " messages\n";
+    message.insert(0, prefix); */
     if(message.back() == '\n') //delete last \n
         message.pop_back();
     return message;
