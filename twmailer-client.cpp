@@ -161,21 +161,29 @@ int main(int argc, char *argv[])
             // the error of send, but still the count of bytes sent
             size = newBuffer.size();
             sendingHeader(create_socket, size); // header with length of message
-            //while()
-
-            if ((send(create_socket, newBuffer.c_str(), newBuffer.size(), 0)) == -1)
+            int bytesSent = 0;
+            int sendBytes = 0;
+            while( bytesSent < size )
             {
-                // in case the server is gone offline we will still not enter
-                // this part of code: see docs: https://linux.die.net/man/3/send
-                // >> Successful completion of a call to send() does not guarantee
-                // >> delivery of the message. A return value of -1 indicates only
-                // >> locally-detected errors.
-                // ... but
-                // to check the connection before send is sense-less because
-                // after checking the communication can fail (so we would need
-                // to have 1 atomic operation to check...)
-                perror("send error");
-                break;
+
+                if ((sendBytes = send(create_socket, newBuffer.c_str(), newBuffer.size(), 0)) == -1)
+                {
+                    
+                    // in case the server is gone offline we will still not enter
+                    // this part of code: see docs: https://linux.die.net/man/3/send
+                    // >> Successful completion of a call to send() does not guarantee
+                    // >> delivery of the message. A return value of -1 indicates only
+                    // >> locally-detected errors.
+                    // ... but
+                    // to check the connection before send is sense-less because
+                    // after checking the communication can fail (so we would need
+                    // to have 1 atomic operation to check...)
+                    perror("send error");
+                    break;
+                }
+
+                bytesSent += sendBytes;
+
             }
 
             //////////////////////////////////////////////////////////////////////
