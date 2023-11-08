@@ -16,6 +16,8 @@
 #include <cstring>
 #include <algorithm>
 #include <set>
+#include <unordered_map>
+#include <tuple>
 
 namespace fs = std::filesystem;
 
@@ -37,7 +39,7 @@ void deleteFile(const std::string& pathToFileToDelete);
 int sendingHeader(int* current_socket, int& size);
 std::string readFile(const std::string& pathToFileToRead);
 std::string listFiles(const std::string& receive);
-void *clientCommunication(void *data, std::string spoolDirectory);
+void *clientCommunication(void *data, std::string spoolDirectory, struct sockaddr_in& cliad);
 void signalHandler(int sig);
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -147,7 +149,7 @@ int main(int argc, char *argv[])
         // START CLIENT
         // ignore printf error handling
         printf("Client connected from %s:%d...\n", inet_ntoa(cliaddress.sin_addr), ntohs(cliaddress.sin_port));
-        clientCommunication(&new_socket, argv[2]); // returnValue can be ignored
+        clientCommunication(&new_socket, argv[2], cliaddress); // returnValue can be ignored
         new_socket = -1;
     }
 
@@ -168,8 +170,9 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-void *clientCommunication(void *data, std::string spoolDirectory)
+void *clientCommunication(void *data, std::string spoolDirectory, struct sockaddr_in& cliad)
 {
+    //std::unordered_map<std::tuple<std::string, std::string>, std::string> userMap;
     std::string buffer;
     int size;
     int *current_socket = (int *)data;
@@ -266,8 +269,14 @@ void *clientCommunication(void *data, std::string spoolDirectory)
             parts.emplace_back(line);
             counter++;
         }
+        if(strncmp(newBuffer, "FAIL", 4) == 0)
+        {
+            char clientIP[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &(cliad.sin_addr), clientIP, INET_ADDRSTRLEN);
+            std::string ipstring(clientIP);
 
-        if(strncmp(newBuffer, "SEND", 4) == 0) // send
+        }
+        else if(strncmp(newBuffer, "SEND", 4) == 0) // send
         {
             if(counter >= 5)
             {
@@ -368,7 +377,6 @@ void *clientCommunication(void *data, std::string spoolDirectory)
             return NULL;
         }
     } while (!abortRequested);
-
     // closes/frees the descriptor if not already
     if (*current_socket != -1)
     {

@@ -19,6 +19,7 @@ CC=g++
 #           These are HP-UX specific flags.
 #############################################################################################
 CFLAGS=-g -Wall -Wextra -Werror -O -std=c++17 -pthread
+LIBS=-lldap -llber
 
 rebuild: clean all
 all: ./bin/twmailer-server ./bin/twmailer-client
@@ -37,4 +38,4 @@ clean:
 	${CC} ${CFLAGS} -o bin/twmailer-server obj/twmailer-server.o
 
 ./bin/twmailer-client: ./obj/twmailer-client.o
-	${CC} ${CFLAGS} -o bin/twmailer-client obj/twmailer-client.o
+	${CC} ${CFLAGS} -o bin/twmailer-client obj/twmailer-client.o ${LIBS}
