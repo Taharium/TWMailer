@@ -16,8 +16,27 @@
 #include <cstring>
 #include <algorithm>
 #include <set>
-#include <unordered_map>
+#include <map>
 #include <tuple>
+#include <ctime>
+#include <ldap.h>
+#include <termios.h>
+/* #include <stdexcept>
+
+// Custom exception class derived from std::exception
+class MyException : public std::exception {
+public:
+    // Constructor that accepts a custom error message
+    MyException(const char* message) : errorMessage(message) {}
+
+    // Override the what() function to provide error message
+    const char* what() const noexcept override {
+        return errorMessage.c_str();
+    }
+
+private:
+    std::string errorMessage;
+}; */
 
 namespace fs = std::filesystem;
 
@@ -41,6 +60,8 @@ std::string readFile(const std::string& pathToFileToRead);
 std::string listFiles(const std::string& receive);
 void *clientCommunication(void *data, std::string spoolDirectory, struct sockaddr_in& cliad);
 void signalHandler(int sig);
+void writeBanToFile(std::map<std::tuple<std::string, std::string>, std::time_t>& banMap);
+bool loginToLDAP(std::vector<std::string>& credentials);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -172,10 +193,11 @@ int main(int argc, char *argv[])
 
 void *clientCommunication(void *data, std::string spoolDirectory, struct sockaddr_in& cliad)
 {
-    //std::unordered_map<std::tuple<std::string, std::string>, std::string> userMap;
+    std::map<std::tuple<std::string, std::string>, std::time_t> banMap;
     std::string buffer;
     int size;
     int *current_socket = (int *)data;
+    int counterBanned = 0;
 
     ////////////////////////////////////////////////////////////////////////////
     // SEND welcome message
@@ -269,12 +291,62 @@ void *clientCommunication(void *data, std::string spoolDirectory, struct sockadd
             parts.emplace_back(line);
             counter++;
         }
-        if(strncmp(newBuffer, "FAIL", 4) == 0)
+        if(parts.size() < 2)
+            message = "ERR";
+        else if(strncmp(newBuffer, "LOGIN", 4) == 0)
         {
+            bool isLoggedin = false;
+            bool banned = false;
             char clientIP[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(cliad.sin_addr), clientIP, INET_ADDRSTRLEN);
             std::string ipstring(clientIP);
+            auto keyTuple = std::make_tuple(ipstring, parts[1]);
+            if(banMap.find(keyTuple) != banMap.end())
+            {
+                std::time_t currentTime = std::time(0);
+                std::time_t bannedTime = banMap[keyTuple];
+                if(currentTime > bannedTime)
+                {
+                    banMap.erase(keyTuple);
+                    //TODO search in file and delete
+                }
+                else
+                {
+                    message = "ERR - BANNED"; // build own exception for this
+                    banned = true;
+                }
+            }
+            
+            if(loginToLDAP(parts) && !banned)
+            {
+                counterBanned = 0;
+                isLoggedin = true;          
+            }
+            else if(!banned)
+            {
+                counterBanned++;
+                message = "ERR - Wrong credentials";
+                isLoggedin = false;
+            }
 
+            if(!isLoggedin && counterBanned == 3 && !banned)
+            {
+                char clientIP[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &(cliad.sin_addr), clientIP, INET_ADDRSTRLEN);
+                std::string ipstring(clientIP);
+                std::cout << ipstring << std::endl;
+                auto keyTuple = std::make_tuple(ipstring, parts[1]);
+                std::time_t bannedTime = std::time(0) + 60;
+                //std::string timeString = std::ctime(&bannedTime);
+                banMap[keyTuple] = bannedTime;
+                writeBanToFile(banMap);
+                message = "ERR - Blacklisted";
+                counterBanned = 0;
+            }
+        }
+        else if(strncmp(newBuffer, "FAIL", 4) == 0)
+        {
+            
         }
         else if(strncmp(newBuffer, "SEND", 4) == 0) // send
         {
@@ -320,7 +392,13 @@ void *clientCommunication(void *data, std::string spoolDirectory, struct sockadd
         }
         else if(strncmp(newBuffer, "DEL", 3) == 0) //delete
         {
-            if( counter == 3)
+            if(std::stoi(parts[3]) > 0)
+            {
+                message = "ERR - List at least once";
+                counter = 0;
+            }
+
+            if(counter == 4)
             {
                 std::string pathToFileToDelete = spoolDirectory + "/" + parts[1] + "/" + parts[2] + ".txt"; //path of file to delete using username and messagenumber
                 if (fs::exists(pathToFileToDelete)) 
@@ -339,7 +417,13 @@ void *clientCommunication(void *data, std::string spoolDirectory, struct sockadd
         }
         else if(strncmp(newBuffer, "READ", 4) == 0)
         {
-            if(counter == 3)
+            if(std::stoi(parts[3]) > 0)
+            {
+                message = "ERR - List at least once";
+                counter = 0;
+            }
+
+            if(counter == 4 )
             {
                 std::string pathToFileToRead = spoolDirectory + "/" + parts[1] + "/" + parts[2] + ".txt"; //path of file to read using username and messagenumber
                 if (fs::exists(pathToFileToRead)) 
@@ -594,4 +678,127 @@ int sendingHeader(int* current_socket, int& size) //sending header with length o
     }
 
     return size;
+}
+
+void writeBanToFile(std::map<std::tuple<std::string, std::string>, std::time_t>& banMap)
+{
+    std::string banDir = "banDir";
+    if(!fs::exists(banDir)) //if spool does not exists --> creat
+        fs::create_directories(banDir);
+    
+    std::ofstream outputFile(banDir + "/ban.txt", std::ios::app);
+    if (outputFile.is_open())
+    {
+        for(auto& i : banMap)
+        {
+            auto& [ip, user] = i.first;
+            auto& time = i.second;
+            outputFile << ip << user << ' ' << time << '\n';
+        }
+        outputFile.close();
+    }
+}
+
+bool loginToLDAP(std::vector<std::string>& credentials)
+{
+    std::string& username = credentials[1];
+    std::string& password = credentials[2];
+
+    ////////////////////////////////////////////////////////////////////////////
+    // LDAP config
+    // anonymous bind with user and pw empty
+    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
+    const int ldapVersion = LDAP_VERSION3;
+
+    // general
+    int rc = 0; // return code
+
+    ////////////////////////////////////////////////////////////////////////////
+    // setup LDAP connection
+    // https://linux.die.net/man/3/ldap_initialize
+    LDAP *ldapHandle;
+    rc = ldap_initialize(&ldapHandle, ldapUri);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "ldap_init failed\n");
+        return false;
+    }
+    printf("connected to LDAP server %s\n", ldapUri);
+
+    ////////////////////////////////////////////////////////////////////////////
+    // set verison options
+    // https://linux.die.net/man/3/ldap_set_option
+    rc = ldap_set_option(
+        ldapHandle,
+        LDAP_OPT_PROTOCOL_VERSION, // OPTION
+        &ldapVersion);             // IN-Value
+    if (rc != LDAP_OPT_SUCCESS)
+    {
+        // https://www.openldap.org/software/man.cgi?query=ldap_err2string&sektion=3&apropos=0&manpath=OpenLDAP+2.4-Release
+        fprintf(stderr, "ldap_set_option(PROTOCOL_VERSION): %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return false;
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // start connection secure (initialize TLS)
+    // https://linux.die.net/man/3/ldap_start_tls_s
+    // int ldap_start_tls_s(LDAP *ld,
+    //                      LDAPControl **serverctrls,
+    //                      LDAPControl **clientctrls);
+    // https://linux.die.net/man/3/ldap
+    // https://docs.oracle.com/cd/E19957-01/817-6707/controls.html
+    //    The LDAPv3, as documented in RFC 2251 - Lightweight Directory Access
+    //    Protocol (v3) (http://www.faqs.org/rfcs/rfc2251.html), allows clients
+    //    and servers to use controls as a mechanism for extending an LDAP
+    //    operation. A control is a way to specify additional information as
+    //    part of a request and a response. For example, a client can send a
+    //    control to a server as part of a search request to indicate that the
+    //    server should sort the search results before sending the results back
+    //    to the client.
+    rc = ldap_start_tls_s(
+        ldapHandle,
+        NULL,
+        NULL);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "ldap_start_tls_s(): %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return false;
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // bind credentials
+    // https://linux.die.net/man/3/lber-types
+    // SASL (Simple Authentication and Security Layer)
+    // https://linux.die.net/man/3/ldap_sasl_bind_s
+    // int ldap_sasl_bind_s(
+    //       LDAP *ld,
+    //       const char *dn,
+    //       const char *mechanism,
+    //       struct berval *cred,
+    //       LDAPControl *sctrls[],
+    //       LDAPControl *cctrls[],
+    //       struct berval **servercredp);
+
+    BerValue bindCredentials;
+    bindCredentials.bv_val = (char *)password.c_str();
+    bindCredentials.bv_len = password.size();
+    BerValue *servercredp; // server's credentials
+    rc = ldap_sasl_bind_s(
+        ldapHandle,
+        username.c_str(),
+        LDAP_SASL_SIMPLE,
+        &bindCredentials,
+        NULL,
+        NULL,
+        &servercredp);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "LDAP bind error: %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return false;
+    }
+    ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+    return true;
 }

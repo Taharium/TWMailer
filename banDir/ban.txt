@@ -1,0 +1,9 @@
+127.0.0.1 uid=wer,ou=people,dc=technikum-wien,dc=at 1699530890
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699531192
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699531844
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699532123
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699532442
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699532767
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699533376
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699533478
+127.0.0.1uid=wer,ou=people,dc=technikum-wien,dc=at 1699533561
