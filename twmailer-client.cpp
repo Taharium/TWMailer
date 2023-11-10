@@ -21,12 +21,9 @@ void sendEmail(std::string& newBuffer, std::string& username);
 void listemail(std::string& newBuffer, std::string& username);
 void readOrDel(std::string& newBuffer, std::string& username, bool usedList);
 int sendingHeader(int& create_socket, int& size);
-void loginToLDAP(std::string& username, std::string& newBuffer);
+bool loginToLDAP(std::string& username, int& create_socket, bool& isBanned);
 int sendAll(int& create_socket, std::string& newBuffer, int& size);
 int receiveHandler(int &byte);
-//int handleLogin(int& create_socket, std::string& username, std::string& newBuffer);
-
-
 
 #define BUF 1024
 
@@ -36,53 +33,42 @@ int main(int argc, char *argv[])
 {
     std::string username;
     int create_socket;
-    char buffer[BUF];
     struct sockaddr_in address;
     int size;
     int isQuit;
     bool loggedIn = false;
     bool usedList = false;
-/*     int counter = 1;
-    bool isBanned = false; */
+    bool isBanned = false;
 
-    ////////////////////////////////////////////////////////////////////////////
+
     // CREATE A SOCKET
-    // https://man7.org/linux/man-pages/man2/socket.2.html
-    // https://man7.org/linux/man-pages/man7/ip.7.html
-    // https://man7.org/linux/man-pages/man7/tcp.7.html
-    // IPv4, TCP (connection oriented), IP (same as server)
     if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
         perror("Socket error");
         return EXIT_FAILURE;
     }
 
-    ////////////////////////////////////////////////////////////////////////////
     // INIT ADDRESS
     // Attention: network byte order => big endian
     memset(&address, 0, sizeof(address)); // init storage with 0
     address.sin_family = AF_INET;         // IPv4
-    // https://man7.org/linux/man-pages/man3/htons.3.html
 
-
-    // checks if agrc is 3 for port
-     in_port_t port;
+    
+    in_port_t port;
     try
     {
-        if (argc < 2 || argc > 3)
+        if (argc < 2 || argc > 3) // checks if agrc is 3 for port
             throw std::invalid_argument("There are either not enough arguemnts or too many.\nPlease enter IP-Adress(optional) and the port\n");
 
         if(argc == 2)
         {
-            // https://man7.org/linux/man-pages/man3/inet_aton.3.html
             inet_aton("127.0.0.1", &address.sin_addr);
             port = (in_port_t)std::stol(argv[1]);
         }
         else if(argc == 3)
         {
-            port = (in_port_t)std::stol(argv[2]);
-            //std::cout << argv[1] << ' ' << port << '\n';
             inet_aton(argv[1], &address.sin_addr);
+            port = (in_port_t)std::stol(argv[2]);
         }
 
         if ((port > 1024)) // port can only be between those two numbers
@@ -93,12 +79,9 @@ int main(int argc, char *argv[])
         std::cerr << e.what() << '\n';
     }
 
-    ////////////////////////////////////////////////////////////////////////////
     // CREATE A CONNECTION
-    // https://man7.org/linux/man-pages/man2/connect.2.html
     if (connect(create_socket, (struct sockaddr *)&address, sizeof(address)) == -1)
     {
-        // https://man7.org/linux/man-pages/man3/perror.3.html
         perror("Connect error - no server available");
         return EXIT_FAILURE;
     }
@@ -106,40 +89,26 @@ int main(int argc, char *argv[])
     // ignore return value of printf
     printf("Connection with server (%s) established\n", inet_ntoa(address.sin_addr));
 
-    ////////////////////////////////////////////////////////////////////////////
-    // RECEIVE DATA
-    // https://man7.org/linux/man-pages/man2/recv.2.html
     int len = 0;
     int byte = recv(create_socket, &len, sizeof(len), 0); // header for initial message
-    if (byte == -1)
-    {
-        perror("recv error");
-    }
-    else if (LC_IDENTIFICATION == 0)
-    {
-        printf("Server closed remote socket\n"); // ignore error
-    }
-    else
-    {
-        buffer[len] = '\0';
-        //printf("%d", len); // ignore error
-    }
+    
+    if(receiveHandler(byte) == -1)
+        return EXIT_FAILURE;
 
-    size = recv(create_socket, buffer, len, 0); // actuaöl initial message
-    if (size == -1)
-    {
-        perror("recv error");
-    }
-    else if (size == 0)
-    {
-        printf("Server closed remote socket\n"); // ignore error
-    }
-    else
+    len = ntohs(len); //important
+    char buffer[len];
+    
+    size = recv(create_socket, buffer, len, 0); // actual initial message
+    if(receiveHandler(size) == -1)
+        return EXIT_FAILURE;
+    else 
     {
         buffer[size] = '\0';
-        printf("%s", buffer); // ignore error
+        printf("%s", buffer);
     }
+
     memset(buffer, 0, sizeof(buffer));
+
     do
     {
         printf(">> ");
@@ -155,13 +124,11 @@ int main(int argc, char *argv[])
             }
             
             for (char &c : buffer) 
-            {
                 c = std::toupper(c);
-            }
 
             isQuit = strncmp(buffer, "QUIT\n", sizeof(buffer)) == 0;
             
-            std::string newBuffer(buffer); // the command            
+            std::string newBuffer(buffer); // convert char* to string           
             
             if(loggedIn)
             {
@@ -173,62 +140,22 @@ int main(int argc, char *argv[])
                     listemail(newBuffer, username);
                 }
                 else if(newBuffer == "DEL\n" || newBuffer == "READ\n")
-                {
                     readOrDel(newBuffer, username, usedList);
-                }
             }
-/* 
-            if(counter == 3)
-            {
-                newBuffer.append("FAIL\n" + username + '\n' + std::to_string(counter) + '\n');   
-                counter = 0;
-                //TODO: how to get a flag that the timer is done on the next login --> if a person is blaclisted counter should not increase
-            } */
 
             if(newBuffer == "LOGIN\n" && !loggedIn)
             {
-                loginToLDAP(username, newBuffer);
-                /* if(loginToLDAP(username))
-                {
-                    newBuffer.append(username + '\n' + std::to_string(counter) + '\n');
-                }
-                else
-                {
-                    if(counter != 3)
-                        counter++;
-                } */
-                /* loginToLDAP(username);
-                newBuffer.append(username + '\n' + std::to_string(counter) + '\n');
-                send(create_socket, newBuffer.c_str(), newBuffer.size(), 0);
-                int len = 0;
-                int byte = recv(create_socket, &len, sizeof(len), 0);
-                if(receiveHandler(byte) == -1)
-                    break;
-                len = ntohs(len);
-                counter = len; */
-                /* if(handleLogin(create_socket, newBuffer, username) == 0)
-                {
-                    loggedIn = true;
-                } */
-                /* if(loginToLDAP(username))// change --> validate everytime on login
-                {
-                    loggedIn = true;
-                    size = newBuffer.size();
-                    sendingHeader(create_socket, size);
-                    send(create_socket, buffer, strlen(buffer), 0);
-                    continue;
-                } 
-                */
+                bool login = loginToLDAP(username, create_socket, isBanned);
+                newBuffer.append(username + '\n' + std::to_string(login) + '\n' + std::to_string(isBanned) + '\n');
             }
+                
 
-            //////////////////////////////////////////////////////////////////////
-            // SEND DATA
-            // https://man7.org/linux/man-pages/man2/send.2.html
-            // send will fail if connection is closed, but does not set
-            // the error of send, but still the count of bytes sent
             size = newBuffer.size();
-            sendingHeader(create_socket, size); // header with length of message
-            sendAll(create_socket, newBuffer, size); // actual message            
+            if(sendingHeader(create_socket, size) == -1) // header with length of message
+                break;
+                
+            if(sendAll(create_socket, newBuffer, size) == -1) // actual message  
+                break;          
 
             //////////////////////////////////////////////////////////////////////
             // RECEIVE FEEDBACK
@@ -243,9 +170,8 @@ int main(int argc, char *argv[])
             // solution 2: add an infrastructure component for messaging (broker)
             //
             if(isQuit != 0)
-            {
                 break;
-            }
+            
             int len = 0, byte = 0;
             byte = recv(create_socket, &len, sizeof(len), MSG_WAITFORONE); // receive header with length of message
 
@@ -255,10 +181,9 @@ int main(int argc, char *argv[])
             len = ntohs(len); //important
             char newBuf[len];
 
-            size = recv(create_socket, newBuf, len, 0); // actal message
+            size = recv(create_socket, newBuf, len, 0); // actual message
             if(receiveHandler(size) == -1)
                 break;
-            
             else
             {
                 newBuf[size] = '\0';
@@ -266,13 +191,11 @@ int main(int argc, char *argv[])
                 {
                     loggedIn = true;
                 }
-                
                 printf("<< %s\n", newBuf); // ignore error
             }
         }
     } while (!isQuit);
 
-    ////////////////////////////////////////////////////////////////////////////
     // CLOSES THE DESCRIPTOR
     if (create_socket != -1)
     {
@@ -287,7 +210,6 @@ int main(int argc, char *argv[])
         }
         create_socket = -1;
     }
-
     return EXIT_SUCCESS;
 }
 
@@ -326,7 +248,7 @@ void sendEmail(std::string& newBuffer, std::string& username)
             std::cout << "message: ";
             break;
         }
-        if (counter == 2 && counter == 0)
+        if (counter < 3)
         {
             counter++;
             continue;
@@ -360,8 +282,7 @@ void readOrDel(std::string& newBuffer, std::string& username, bool usedList)
     std::cout << "messagenumber: ";
     std::string line;
     std::getline(std::cin, line);
-    newBuffer.append(line + '\n');
-    newBuffer.append(std::to_string(usedList) + '\n');
+    newBuffer.append(line + '\n' + std::to_string(usedList) + '\n');
 }
 
 int sendingHeader(int& create_socket, int& size)
@@ -370,32 +291,157 @@ int sendingHeader(int& create_socket, int& size)
     if(send(create_socket, &len, sizeof(len), 0) == -1)
     {
         perror("send failed");
-        return 1;
+        return -1;
     }
     return 0;
 }
 
-void loginToLDAP(std::string &username, std::string &newBuffer)
+bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
 {
     // read username (bash: export ldapuser=<yourUsername>)
+    ////////////////////////////////////////////////////////////////////////////
+    // LDAP config
+    // anonymous bind with user and pw empty
+    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
+    const int ldapVersion = LDAP_VERSION3;
+
     char ldapBindUser[256];
     char rawLdapUser[128];
     std::cout << "\nUsername: ";
     std::getline(std::cin, username);
-    std::cout << '\n' <<username.c_str() <<'\n';
+    //std::cout << '\n' <<username.c_str() <<'\n';
     if (username.size() <= 8)
         strcpy(rawLdapUser, username.c_str());
     else
-        return;
+        return false;
     sprintf(ldapBindUser, "uid=%s,ou=people,dc=technikum-wien,dc=at", rawLdapUser);
     printf("user set to: %s\n", ldapBindUser);
 
     // read password (bash: export ldappw=<yourPW>)
     char ldapBindPassword[256];
     strcpy(ldapBindPassword, getpass());
-    std::string pw(ldapBindPassword);
-    std::string user(ldapBindUser);
-    newBuffer.append(user + '\n' + pw + '\n');
+/*     std::string pw(ldapBindPassword);
+    std::string ldapString(ldapBindUser);
+    newBuffer.append(ldapString + '\n' + pw + '\n' + username + '\n'); */
+    std::string buf ;
+    buf.append("CHECK\n" + username + '\n');
+    int size = buf.size();
+    sendingHeader(create_socket, size);
+    sendAll(create_socket, buf, size);
+
+    int byte = recv(create_socket, &size, sizeof(size), 0); // header for initial message
+    if(receiveHandler(byte) == -1)
+        return EXIT_FAILURE;
+    
+    size = ntohs(size); //important
+    char buffer[size];
+
+    byte = recv(create_socket, buffer, size, 0); // actual initial message
+    if(receiveHandler(byte) == -1)
+        return EXIT_FAILURE;
+    else 
+    {
+        buffer[size] = '\0';
+    }
+
+    if(strncmp(buffer, "BANNED", 6) == 0)
+    {
+        isBanned = true;
+        return false;
+    }
+
+    isBanned = false;
+    // general
+    int rc = 0; // return code
+
+    ////////////////////////////////////////////////////////////////////////////
+    // setup LDAP connection
+    // https://linux.die.net/man/3/ldap_initialize
+    LDAP *ldapHandle;
+    rc = ldap_initialize(&ldapHandle, ldapUri);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "ldap_init failed\n");
+        return false;
+    }
+    printf("connected to LDAP server %s\n", ldapUri);
+
+    ////////////////////////////////////////////////////////////////////////////
+    // set verison options
+    // https://linux.die.net/man/3/ldap_set_option
+    rc = ldap_set_option(
+        ldapHandle,
+        LDAP_OPT_PROTOCOL_VERSION, // OPTION
+        &ldapVersion);             // IN-Value
+    if (rc != LDAP_OPT_SUCCESS)
+    {
+        // https://www.openldap.org/software/man.cgi?query=ldap_err2string&sektion=3&apropos=0&manpath=OpenLDAP+2.4-Release
+        fprintf(stderr, "ldap_set_option(PROTOCOL_VERSION): %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return false;
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // start connection secure (initialize TLS)
+    // https://linux.die.net/man/3/ldap_start_tls_s
+    // int ldap_start_tls_s(LDAP *ld,
+    //                      LDAPControl **serverctrls,
+    //                      LDAPControl **clientctrls);
+    // https://linux.die.net/man/3/ldap
+    // https://docs.oracle.com/cd/E19957-01/817-6707/controls.html
+    //    The LDAPv3, as documented in RFC 2251 - Lightweight Directory Access
+    //    Protocol (v3) (http://www.faqs.org/rfcs/rfc2251.html), allows clients
+    //    and servers to use controls as a mechanism for extending an LDAP
+    //    operation. A control is a way to specify additional information as
+    //    part of a request and a response. For example, a client can send a
+    //    control to a server as part of a search request to indicate that the
+    //    server should sort the search results before sending the results back
+    //    to the client.
+    rc = ldap_start_tls_s(
+        ldapHandle,
+        NULL,
+        NULL);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "ldap_start_tls_s(): %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return false;
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // bind credentials
+    // https://linux.die.net/man/3/lber-types
+    // SASL (Simple Authentication and Security Layer)
+    // https://linux.die.net/man/3/ldap_sasl_bind_s
+    // int ldap_sasl_bind_s(
+    //       LDAP *ld,
+    //       const char *dn,
+    //       const char *mechanism,
+    //       struct berval *cred,
+    //       LDAPControl *sctrls[],
+    //       LDAPControl *cctrls[],
+    //       struct berval **servercredp);
+
+    BerValue bindCredentials;
+    bindCredentials.bv_val = (char *)ldapBindPassword;
+    bindCredentials.bv_len = strlen(ldapBindPassword);
+    BerValue *servercredp; // server's credentials
+    rc = ldap_sasl_bind_s(
+        ldapHandle,
+        ldapBindUser,
+        LDAP_SASL_SIMPLE,
+        &bindCredentials,
+        NULL,
+        NULL,
+        &servercredp);
+    if (rc != LDAP_SUCCESS)
+    {
+        fprintf(stderr, "LDAP bind error: %s\n", ldap_err2string(rc));
+        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+        return false;
+    }
+    ldap_unbind_ext_s(ldapHandle, NULL, NULL);
+    return true;
 }
 
 const char *getpass()
@@ -492,27 +538,6 @@ int sendAll(int& create_socket, std::string& newBuffer, int& size)
     size = total;
     return 0;
 }
-
-/* int handleLogin(int& create_socket, std::string& username, std::string& newBuffer)
-{
-    int a = (int)loginToLDAP(username); 
-    newBuffer.append(username + '\n');
-    int size = newBuffer.size();
-    sendingHeader(create_socket, size);
-    send(create_socket, newBuffer.c_str(), newBuffer.size(), 0);
-
-    int len = 0;
-    int byte = recv (create_socket, &len, sizeof(len), 0);
-    if(receiveHandler(byte) == -1)
-        return -1;
-    len = ntohs(len);
-    char buffer[len];
-    byte = recv(create_socket, buffer, len, 0);
-    if(receiveHandler(byte) == -1)
-        return -1;
-    if(strncmp(buffer, "OK", 2))
-        return 
-} */
 
 int receiveHandler(int &byte)
 {
