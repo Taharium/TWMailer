@@ -17,10 +17,7 @@
 #include <algorithm>
 #include <set>
 #include <map>
-#include <tuple>
 #include <ctime>
-#include <ldap.h>
-#include <termios.h>
 #include <stdexcept>
 #include <thread>
 #include <mutex>

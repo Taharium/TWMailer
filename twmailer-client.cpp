@@ -94,7 +94,6 @@ int main(int argc, char *argv[])
     }
 
     memset(buffer, 0, sizeof(buffer));
-
     do
     {
         printf(">> ");

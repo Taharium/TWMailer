@@ -25,13 +25,12 @@ std::string listFiles(const std::string& receive);
 void *clientCommunication(int current_socket, std::string spoolDirectory, std::string ipstring);
 void signalHandler(int sig);
 //void StartCommunicationThread(std::string spoolDir);
-void writeBanToFile(std::map<std::tuple<std::string, std::string>, std::time_t>& banMap);
-bool loginToLDAP(std::vector<std::string>& credentials);
+void writeBanToFile(std::map<std::string, std::time_t>& banMap);
 int receiveHandler(int &byte);
-void searchFileIfBanned( std::map<std::tuple<std::string, std::string>, std::time_t>& banMap);
-bool handleLogin(std::string& ipString, std::map<std::tuple<std::string, std::string>, std::time_t>& banMap, int& counterBanned, std::vector<std::string>& parts);
-bool searchIfBanned(std::tuple<std::string, std::string>& keyTuple, std::map<std::tuple<std::string, std::string>, std::time_t>& banMap);
-void blacklisting(std::tuple<std::string, std::string>& keyTuple, std::map<std::tuple<std::string, std::string>, std::time_t>& banMap);
+void searchFileIfBanned( std::map<std::string, std::time_t>& banMap);
+bool handleLogin(std::string& ipString, std::map<std::string, std::time_t>& banMap, int& counterBanned, std::vector<std::string>& parts);
+bool searchIfBanned(std::string& ipstring, std::map<std::string, std::time_t>& banMap);
+void blacklisting(std::string& ipstring, std::map<std::string, std::time_t>& banMap);
 int sendAll(int current_socket, std::string& message, int& size);
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -174,7 +173,7 @@ int main(int argc, char *argv[])
 void *clientCommunication(int current_socket, std::string spoolDirectory, std::string ipstring)
 {
     
-    std::map<std::tuple<std::string, std::string>, std::time_t> banMap;
+    std::map<std::string, std::time_t> banMap;
     m.lock();
     searchFileIfBanned(banMap);
     m.unlock();
@@ -192,7 +191,6 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
 
     if(sendAll(current_socket, buffer, size) == -1)
         return NULL;
-
     do
     {
         /////////////////////////////////////////////////////////////////////////
@@ -239,9 +237,8 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
             message = "ERR";
         else if(strncmp(newBuffer, "CHECK", 5) == 0)
         {
-            auto keyTuple = std::make_tuple(ipstring, parts[1]);
             m.lock();
-            if(searchIfBanned(keyTuple, banMap))
+            if(searchIfBanned(ipstring, banMap))
                 message = "ERR";
             m.unlock();
         }
@@ -361,22 +358,24 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
             message = "ERR";
         }
 
-        if(strncmp(newBuffer, "QUIT", 4) == 0) //quit
+       if(strncmp(newBuffer, "QUIT", 4) == 0) //quit
         {
             break;
         }
-        else
-        {
-            printf("Message received: %s\n", newBuffer); // ignore error
 
-            int size = message.size();
+        if (newBuffer[0] != '\0') {
+            printf("Message received: %s\n", newBuffer);
+        } else {
+            printf("Received an empty message.\n");
+        } // ignore error
 
-            if(sendingHeader(current_socket, size) == -1) // header with length of message
-                break;
-            
-            if(sendAll(current_socket, message, size) == -1) //actual string
-                break;
-        }
+        int size = message.size();
+
+        if(sendingHeader(current_socket, size) == -1) // header with length of message
+            break;
+        
+        if(sendAll(current_socket, message, size) == -1) //actual string
+            break;
 
     } while (!abortRequested);
     // closes/frees the descriptor if not already
@@ -609,7 +608,7 @@ int sendingHeader(int current_socket, int& size) //sending header with length of
     return 0;
 }
 
-void writeBanToFile(std::map<std::tuple<std::string, std::string>, std::time_t>& banMap)
+void writeBanToFile(std::map<std::string, std::time_t>& banMap)
 {
     std::string banDir = "banDir";
     if(!fs::exists(banDir)) //if bandir does not exists --> create
@@ -625,128 +624,24 @@ void writeBanToFile(std::map<std::tuple<std::string, std::string>, std::time_t>&
     {
         for(auto& i : banMap)
         {
-            auto& [ip, user] = i.first;
+            auto& ip = i.first;
             auto& time = i.second;
-            outputFile << '\n' << ip << ' ' << user << ' ' << time ;
+            outputFile << '\n' << ip << ' ' << time ;
         }
         outputFile.close();
     }
     m.unlock();
 }
 
-bool loginToLDAP(std::vector<std::string>& credentials)
-{
-    std::string& username = credentials[1];
-    std::string& password = credentials[2];
-
-    ////////////////////////////////////////////////////////////////////////////
-    // LDAP config
-    // anonymous bind with user and pw empty
-    const char *ldapUri = "ldap://ldap.technikum-wien.at:389";
-    const int ldapVersion = LDAP_VERSION3;
-
-    // general
-    int rc = 0; // return code
-
-    ////////////////////////////////////////////////////////////////////////////
-    // setup LDAP connection
-    // https://linux.die.net/man/3/ldap_initialize
-    LDAP *ldapHandle;
-    rc = ldap_initialize(&ldapHandle, ldapUri);
-    if (rc != LDAP_SUCCESS)
-    {
-        fprintf(stderr, "ldap_init failed\n");
-        return false;
-    }
-    printf("connected to LDAP server %s\n", ldapUri);
-
-    ////////////////////////////////////////////////////////////////////////////
-    // set verison options
-    // https://linux.die.net/man/3/ldap_set_option
-    rc = ldap_set_option(
-        ldapHandle,
-        LDAP_OPT_PROTOCOL_VERSION, // OPTION
-        &ldapVersion);             // IN-Value
-    if (rc != LDAP_OPT_SUCCESS)
-    {
-        // https://www.openldap.org/software/man.cgi?query=ldap_err2string&sektion=3&apropos=0&manpath=OpenLDAP+2.4-Release
-        fprintf(stderr, "ldap_set_option(PROTOCOL_VERSION): %s\n", ldap_err2string(rc));
-        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-        return false;
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // start connection secure (initialize TLS)
-    // https://linux.die.net/man/3/ldap_start_tls_s
-    // int ldap_start_tls_s(LDAP *ld,
-    //                      LDAPControl **serverctrls,
-    //                      LDAPControl **clientctrls);
-    // https://linux.die.net/man/3/ldap
-    // https://docs.oracle.com/cd/E19957-01/817-6707/controls.html
-    //    The LDAPv3, as documented in RFC 2251 - Lightweight Directory Access
-    //    Protocol (v3) (http://www.faqs.org/rfcs/rfc2251.html), allows clients
-    //    and servers to use controls as a mechanism for extending an LDAP
-    //    operation. A control is a way to specify additional information as
-    //    part of a request and a response. For example, a client can send a
-    //    control to a server as part of a search request to indicate that the
-    //    server should sort the search results before sending the results back
-    //    to the client.
-    rc = ldap_start_tls_s(
-        ldapHandle,
-        NULL,
-        NULL);
-    if (rc != LDAP_SUCCESS)
-    {
-        fprintf(stderr, "ldap_start_tls_s(): %s\n", ldap_err2string(rc));
-        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-        return false;
-    }
-
-    ////////////////////////////////////////////////////////////////////////////
-    // bind credentials
-    // https://linux.die.net/man/3/lber-types
-    // SASL (Simple Authentication and Security Layer)
-    // https://linux.die.net/man/3/ldap_sasl_bind_s
-    // int ldap_sasl_bind_s(
-    //       LDAP *ld,
-    //       const char *dn,
-    //       const char *mechanism,
-    //       struct berval *cred,
-    //       LDAPControl *sctrls[],
-    //       LDAPControl *cctrls[],
-    //       struct berval **servercredp);
-
-    BerValue bindCredentials;
-    bindCredentials.bv_val = (char *)password.c_str();
-    bindCredentials.bv_len = password.size();
-    BerValue *servercredp; // server's credentials
-    rc = ldap_sasl_bind_s(
-        ldapHandle,
-        username.c_str(),
-        LDAP_SASL_SIMPLE,
-        &bindCredentials,
-        NULL,
-        NULL,
-        &servercredp);
-    if (rc != LDAP_SUCCESS)
-    {
-        fprintf(stderr, "LDAP bind error: %s\n", ldap_err2string(rc));
-        ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-        return false;
-    }
-    ldap_unbind_ext_s(ldapHandle, NULL, NULL);
-    return true;
-}
-
-bool searchIfBanned(std::tuple<std::string, std::string>& keyTuple, std::map<std::tuple<std::string, std::string>, std::time_t>& banMap)
+bool searchIfBanned(std::string& ipstring, std::map<std::string, std::time_t>& banMap)
 {
     std::time_t currentTime = std::time(0);
-    if(banMap.find(keyTuple) != banMap.end())
+    if(banMap.find(ipstring) != banMap.end())
     {
-        std::time_t bannedTime = banMap[keyTuple];
+        std::time_t bannedTime = banMap[ipstring];
         if(currentTime > bannedTime)
         {
-            banMap.erase(keyTuple);
+            banMap.erase(ipstring);
             //TODO search in file and delete
         }
         else
@@ -757,10 +652,10 @@ bool searchIfBanned(std::tuple<std::string, std::string>& keyTuple, std::map<std
     return false;
 }
 
-void blacklisting(std::tuple<std::string, std::string>& keyTuple, std::map<std::tuple<std::string, std::string>, std::time_t>& banMap)
+void blacklisting(std::string& ipstring, std::map<std::string, std::time_t>& banMap)
 {
     std::time_t bannedTime = std::time(0) + 60;
-    banMap[keyTuple] = bannedTime;
+    banMap[ipstring] = bannedTime;
     writeBanToFile(banMap);
 
 }
@@ -783,7 +678,7 @@ int receiveHandler(int &byte)
     return 0;
 }
 
-void searchFileIfBanned(std::map<std::tuple<std::string, std::string>, std::time_t>& banMap)
+void searchFileIfBanned(std::map<std::string, std::time_t>& banMap)
 {
     std::string banDir = "banDir";
     if(!fs::exists(banDir)) //if spool does not exists --> creat
@@ -797,20 +692,18 @@ void searchFileIfBanned(std::map<std::tuple<std::string, std::string>, std::time
         while (std::getline(inputFile, line))
         {
             std::istringstream stream(line); // Create an input string stream from the buffer
-            std::string ip, user, time;
-            stream >> ip >> user >> time;
+            std::string ip, time;
+            stream >> ip >> time;
             std::time_t timeT = std::stol(time);
-            auto keyTuple = std::make_tuple(ip, user);
-            banMap[keyTuple] = timeT;
+            banMap[ip] = timeT;
         }
         // Close the file after reading
         inputFile.close();
     }
 }
 
-bool handleLogin(std::string& ipString, std::map<std::tuple<std::string, std::string>, std::time_t>& banMap, int& counterBanned, std::vector<std::string>& parts)
+bool handleLogin(std::string& ipString, std::map<std::string, std::time_t>& banMap, int& counterBanned, std::vector<std::string>& parts)
 {
-    auto keyTuple = std::make_tuple(ipString, parts[1]);
     bool isLoggedin = false;
     
     if(std::stoi(parts[2]) == 1)
@@ -825,7 +718,7 @@ bool handleLogin(std::string& ipString, std::map<std::tuple<std::string, std::st
     if(counterBanned == 3)
     {
         m.lock();
-        blacklisting(keyTuple, banMap); 
+        blacklisting(ipString, banMap); 
         m.unlock();
         counterBanned = 0;
     }
