@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
             }
                 
 
-            size = newBuffer.size();
+            size = newBuffer.size() + 1;
             if(sendingHeader(create_socket, size) == -1) // header with length of message
                 break;
                 
@@ -309,8 +309,8 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
     std::string ldapString(ldapBindUser);
     newBuffer.append(ldapString + '\n' + pw + '\n' + username + '\n'); */
     std::string buf;
-    buf.append("CHECK\n" + username + '\n');
-    int size = buf.size();
+    buf.append("CHECK\n");
+    int size = buf.size() + 1;
     sendingHeader(create_socket, size);
     sendAll(create_socket, buf, size);
 
@@ -329,7 +329,7 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
         buffer[size] = '\0';
     }
 
-    if(strncmp(buffer, "BANNED", 6) == 0)
+    if(strncmp(buffer, "ERR", 6) == 0)
     {
         isBanned = true;
         return false;

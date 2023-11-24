@@ -141,16 +141,19 @@ int main(int argc, char *argv[])
         std::string clientIPString(clientIP);
         printf("Client connected from %s:%d...\n", clientIP, ntohs(cliaddress.sin_port));
         std::string spoolDir = argv[2];
-        threads.emplace_back(clientCommunication, new_socket, spoolDir, clientIPString);
+        threads.emplace_back(std::thread(clientCommunication, new_socket, spoolDir, clientIPString));
+        //clientCommunication(new_socket, spoolDir, clientIPString);
         new_socket = -1;
     }
 
+    m.lock();
+    auto id = std::this_thread::get_id();
+    m.unlock();
+        
     for (auto& thread : threads)
     {
-        if (thread.joinable())
-        {
+        if(thread.get_id() == id)
             thread.join();
-        }
     }
 
     // frees the descriptor
@@ -166,6 +169,8 @@ int main(int argc, char *argv[])
         }
         create_socket = -1;
     }
+
+    printf("Server shutdown\n"); // ignore error
 
     return EXIT_SUCCESS;
 }
@@ -184,7 +189,7 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
     ////////////////////////////////////////////////////////////////////////////
     // SEND welcome message
     std::string buffer = "Welcome to myserver!\r\nPlease enter your commands...\r\n";
-    size = buffer.size();
+    size = buffer.size() + 1;
     //header for length of message in buffer
     if(sendingHeader(current_socket, size) == -1)
         return NULL;
@@ -233,9 +238,8 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
             parts.emplace_back(line);
             counter++;
         }
-        if(counter == 1)
-            message = "ERR";
-        else if(strncmp(newBuffer, "CHECK", 5) == 0)
+
+        if(strncmp(newBuffer, "CHECK", 5) == 0)
         {
             m.lock();
             if(searchIfBanned(ipstring, banMap))
@@ -369,7 +373,7 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
             printf("Received an empty message.\n");
         } // ignore error
 
-        int size = message.size();
+        int size = message.size() + 1;
 
         if(sendingHeader(current_socket, size) == -1) // header with length of message
             break;
@@ -638,6 +642,7 @@ bool searchIfBanned(std::string& ipstring, std::map<std::string, std::time_t>& b
     std::time_t currentTime = std::time(0);
     if(banMap.find(ipstring) != banMap.end())
     {
+        //printf("banned\n");
         std::time_t bannedTime = banMap[ipstring];
         if(currentTime > bannedTime)
         {
@@ -649,6 +654,7 @@ bool searchIfBanned(std::string& ipstring, std::map<std::string, std::time_t>& b
             return true;
         }
     }
+    //printf("not banned\n");
     return false;
 }
 
@@ -681,9 +687,12 @@ int receiveHandler(int &byte)
 void searchFileIfBanned(std::map<std::string, std::time_t>& banMap)
 {
     std::string banDir = "banDir";
-    if(!fs::exists(banDir)) //if spool does not exists --> creat
+    if(!fs::exists(banDir))
+    {
         fs::create_directories(banDir);
-    
+        return;
+    } //if banDir does not exists --> create
+        
     std::ifstream inputFile(banDir + "/ban.txt");
     if (inputFile.is_open())  //open index and take the number 
     {
@@ -717,9 +726,7 @@ bool handleLogin(std::string& ipString, std::map<std::string, std::time_t>& banM
     
     if(counterBanned == 3)
     {
-        m.lock();
         blacklisting(ipString, banMap); 
-        m.unlock();
         counterBanned = 0;
     }
     return isLoggedin;
