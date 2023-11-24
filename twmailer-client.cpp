@@ -1,18 +1,4 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <string>
-#include <iostream>
-#include <stdexcept>
-#include <cctype>
-#include <vector>
-#include <ldap.h>
-#include <termios.h>
+#include "headers/clientheaders.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 const char* getpass();
@@ -323,7 +309,7 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
 /*     std::string pw(ldapBindPassword);
     std::string ldapString(ldapBindUser);
     newBuffer.append(ldapString + '\n' + pw + '\n' + username + '\n'); */
-    std::string buf ;
+    std::string buf;
     buf.append("CHECK\n" + username + '\n');
     int size = buf.size();
     sendingHeader(create_socket, size);

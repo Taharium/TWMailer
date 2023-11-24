@@ -1,29 +1,4 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <signal.h>
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <sstream>
-#include <filesystem>
-#include <vector>
-#include <cstring>
-#include <algorithm>
-#include <set>
-#include <map>
-#include <tuple>
-#include <ctime>
-#include <ldap.h>
-#include <termios.h>
-#include <stdexcept>
-#include <thread>
-#include <mutex>
+#include "headers/serverheaders.h"
 
 std::mutex m;
 
@@ -168,10 +143,6 @@ int main(int argc, char *argv[])
         printf("Client connected from %s:%d...\n", clientIP, ntohs(cliaddress.sin_port));
         std::string spoolDir = argv[2];
         threads.emplace_back(clientCommunication, new_socket, spoolDir, clientIPString);
-        /* threads.emplace_back([new_socket, spoolDir, clientIPString] () {
-            clientCommunication(new_socket, spoolDir, clientIPString);
-        }); */
-        //clientCommunication(new_socket, spoolDir, clientIPString); // returnValue can be ignored
         new_socket = -1;
     }
 
@@ -182,20 +153,6 @@ int main(int argc, char *argv[])
             thread.join();
         }
     }
-
-    /* while(!threads.empty())
-    {  
-        int counter = 0;
-        for(auto& thread : threads)
-        {
-            if(thread.joinable())
-            {
-                thread.join();
-                threads.erase(threads.begin() + counter);
-            }
-            counter++;
-        }
-    } */
 
     // frees the descriptor
     if (create_socket != -1)
@@ -219,7 +176,7 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
     
     std::map<std::tuple<std::string, std::string>, std::time_t> banMap;
     m.lock();
-    searchFileIfBanned(banMap); //TODO: mutex lock
+    searchFileIfBanned(banMap);
     m.unlock();
     
     int size;
