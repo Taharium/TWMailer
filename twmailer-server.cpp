@@ -207,7 +207,8 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
         // receive header with length of actual string
         if((size = recvAllHeader(current_socket, len)) == -1)
             break;
-        
+
+        len = ntohs(len); //convert from network byte order to host byte order
         // allocate buffer for actual string with length of header
         char newBuffer[len];
         

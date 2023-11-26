@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
     int create_socket;
     struct sockaddr_in address;
     int size;
-    int isQuit;
+    int isQuit =0;
     bool loggedIn = false;
     bool usedList = false;
     bool isBanned = false;
@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
     if(recvAllHeader(create_socket, len) == -1) // header with length of message
         return EXIT_FAILURE;
 
-    //len = ntohs(len); //important
+    len = ntohs(len); //important
     char buffer[len]; // buffer for message, size of message
 
     if((size = recvAll(create_socket, buffer, len)) == -1) // actual message
@@ -107,14 +107,11 @@ int main(int argc, char *argv[])
                 size -= 1;
                 buffer[size] = 0;
             }
-            
             for (char &c : buffer)  // convert to uppercase
                 c = std::toupper(c);
 
             isQuit = strncmp(buffer, "QUIT\n", sizeof(buffer)) == 0; // check if quit
-            
             std::string newBuffer(buffer); // convert char* to string           
-            
             if(loggedIn) // check if logged in
             {
                 if(newBuffer == "SEND\n")
@@ -149,7 +146,7 @@ int main(int argc, char *argv[])
             if(recvAllHeader(create_socket, len) == -1) // header with length of message
                 break;
 
-            //len = ntohs(len); //important
+            len = ntohs(len); //important
             char newBuf[len]; // buffer for message, size of message
 
             if((size = recvAll(create_socket, newBuf, len)) == -1) // actual message received
@@ -295,7 +292,7 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
     if(recvAllHeader(create_socket, size) == -1) // recv header with length of message
         return false;
     
-    //size = ntohs(size); //important
+    size = ntohs(size); //important
     char buffer[size]; // buffer for message, size of message
 
     if(recvAll(create_socket, buffer, size) == -1) // actual message
