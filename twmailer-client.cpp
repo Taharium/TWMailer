@@ -50,17 +50,17 @@ int main(int argc, char *argv[])
 
         if(argc == 2)
         {
-            inet_aton("127.0.0.1", &address.sin_addr);
-            port = (in_port_t)std::stol(argv[1]);
+            inet_aton("127.0.0.1", &address.sin_addr); // localhost as default IP, ipstring converted to binary
+            port = (in_port_t)std::stol(argv[1]); // port as argument 
         }
         else if(argc == 3)
         {
-            inet_aton(argv[1], &address.sin_addr);
-            port = (in_port_t)std::stol(argv[2]);
+            inet_aton(argv[1], &address.sin_addr); // IP as argument, ipstring converted to binary
+            port = (in_port_t)std::stol(argv[2]); // port as argument
         }
 
         if ((port > 1024)) // port can only be between those two numbers
-            address.sin_port = htons(port);
+            address.sin_port = htons(port); 
     }
     catch (const std::invalid_argument &e)
     {
@@ -78,28 +78,22 @@ int main(int argc, char *argv[])
     printf("Connection with server (%s) established\n", inet_ntoa(address.sin_addr));
 
     int len = 0;
-    /* int byte = recv(create_socket, &len, sizeof(len), 0); // header for initial message
-    
-    if(receiveHandler(byte) == -1)
-        return EXIT_FAILURE; */
-    if(recvAllHeader(create_socket, len) == -1)
+
+    if(recvAllHeader(create_socket, len) == -1) // header with length of message
         return EXIT_FAILURE;
 
-    len = ntohs(len); //important
-    char buffer[len];
-    
-    /* size = recv(create_socket, buffer, len, 0); // actual initial message
-    if(receiveHandler(size) == -1)
-        return EXIT_FAILURE; */
-    if((size = recvAll(create_socket, buffer, len)) == -1)
+    //len = ntohs(len); //important
+    char buffer[len]; // buffer for message, size of message
+
+    if((size = recvAll(create_socket, buffer, len)) == -1) // actual message
         return EXIT_FAILURE;
     else 
     {
-        buffer[size] = '\0';
+        buffer[size] = '\0'; // add end of string
         printf("%s", buffer);
     }
 
-    memset(buffer, 0, sizeof(buffer));
+    memset(buffer, 0, sizeof(buffer)); // clear buffer
     do
     {
         printf(">> ");
@@ -114,14 +108,14 @@ int main(int argc, char *argv[])
                 buffer[size] = 0;
             }
             
-            for (char &c : buffer) 
+            for (char &c : buffer)  // convert to uppercase
                 c = std::toupper(c);
 
-            isQuit = strncmp(buffer, "QUIT\n", sizeof(buffer)) == 0;
+            isQuit = strncmp(buffer, "QUIT\n", sizeof(buffer)) == 0; // check if quit
             
             std::string newBuffer(buffer); // convert char* to string           
             
-            if(loggedIn)
+            if(loggedIn) // check if logged in
             {
                 if(newBuffer == "SEND\n")
                     sendEmail(newBuffer, username);
@@ -134,10 +128,10 @@ int main(int argc, char *argv[])
                     readOrDel(newBuffer, username, usedList);
             }
 
-            if(newBuffer == "LOGIN\n" && !loggedIn)
+            if(newBuffer == "LOGIN\n" && !loggedIn) // check if login was entered
             {
-                bool login = loginToLDAP(username, create_socket, isBanned);
-                newBuffer.append(username + '\n' + std::to_string(login) + '\n' + std::to_string(isBanned) + '\n');
+                bool login = loginToLDAP(username, create_socket, isBanned); // login to ldap
+                newBuffer.append(username + '\n' + std::to_string(login) + '\n' + std::to_string(isBanned) + '\n'); 
             }
 
             size = newBuffer.size() + 1;
@@ -147,44 +141,25 @@ int main(int argc, char *argv[])
             if(sendAll(create_socket, newBuffer, size) == -1) // actual message  
                 break;          
 
-            //////////////////////////////////////////////////////////////////////
-            // RECEIVE FEEDBACK
-            // consider: reconnect handling might be appropriate in somes cases
-            //           How can we determine that the command sent was received
-            //           or not?
-            //           - Resend, might change state too often.
-            //           - Else a command might have been lost.
-            //
-            // solution 1: adding meta-data (unique command id) and check on the
-            //             server if already processed.
-            // solution 2: add an infrastructure component for messaging (broker)
-            //
-            if(isQuit != 0)
+            if(isQuit != 0) // check if quit
                 break;
             
             int len = 0;
-            /* byte = recv(create_socket, &len, sizeof(len), MSG_WAITFORONE); // receive header with length of message
-            if(receiveHandler(byte) == -1)
-                break; */
-            if(recvAllHeader(create_socket, len) == -1)
+
+            if(recvAllHeader(create_socket, len) == -1) // header with length of message
                 break;
 
-            len = ntohs(len); //important
-            char newBuf[len];
+            //len = ntohs(len); //important
+            char newBuf[len]; // buffer for message, size of message
 
-            /* size = recv(create_socket, newBuf, len, 0); // actual message
-            if(receiveHandler(size) == -1)
-                break; */
-            /* if(recvAll(create_socket, newBuf, len) == -1) // actual message
-                break; */
-            if((size = recvAll(create_socket, newBuf, len)) == -1)
+            if((size = recvAll(create_socket, newBuf, len)) == -1) // actual message received
                 break;
             else
             {
-                newBuf[size] = '\0';
-                if(strncmp(newBuf, "OK", 2) == 0)
+                newBuf[size] = '\0'; // add end of string
+                if(strncmp(newBuf, "OK", 2) == 0) // check if ok
                 {
-                    loggedIn = true;
+                    loggedIn = true; // set logged in to true
                 }
                 printf("<< %s\n", newBuf); // ignore error
             }
@@ -208,7 +183,7 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-void sendEmail(std::string& newBuffer, std::string& username)
+void sendEmail(std::string& newBuffer, std::string& username) // send email
 {
     int counter = 1;
     newBuffer.append(username + '\n');
@@ -218,45 +193,45 @@ void sendEmail(std::string& newBuffer, std::string& username)
         switch (counter)
         {
         case 1:{
-            std::cout << "receiver: ";
+            std::cout << "receiver: "; // receiver
             std::string line;
-            std::getline(std::cin, line);
-            if(line.size() > 8)
+            std::getline(std::cin, line); // read line
+            if(line.size() > 8) // check if line is too long
             {
                 std::cout << "receiver too long, max 8 characters\n";
-                counter--;
+                counter--; // to repeat the input
                 break;
             }
-            newBuffer.append(line + '\n');
+            newBuffer.append(line + '\n'); // append to buffer
             break;
         }
         case 2:{
-            std::cout << "subject: ";
+            std::cout << "subject: "; // subject
             std::string line;
-            std::getline(std::cin, line);
-            if(line.size() > 80)
+            std::getline(std::cin, line); // read line
+            if(line.size() > 80) // check if line is too long
             {
                 std::cout << "subject too long, max 80 characters\n";
-                counter--;
+                counter--; // to repeat the input
                 break;
             }
-            newBuffer.append(line + '\n');
+            newBuffer.append(line + '\n'); // append to buffer
             break;
         }
         case 3:
-            std::cout << "message: ";
+            std::cout << "message: "; // message
             break;
         }
-        if (counter < 3)
+        if (counter < 3) // if counter is smaller than 3, increase counter and continue
         {
             counter++;
             continue;
         }
         
         std::string line;
-        std::getline(std::cin, line);
+        std::getline(std::cin, line); // read line
         newBuffer.append(line + '\n');
-        counter++;
+        counter++; // increase counter
 
         // Check for termination sequence "\n.\n"
         int size = newBuffer.size();
@@ -272,29 +247,18 @@ void sendEmail(std::string& newBuffer, std::string& username)
 
 void listemail(std::string& newBuffer, std::string& username)
 {
-    newBuffer.append(username + '\n');
+    newBuffer.append(username + '\n'); // append username
 }
 
 void readOrDel(std::string& newBuffer, std::string& username, bool usedList)
 {
     newBuffer.append(username + '\n');
-    std::cout << "messagenumber: ";
+    std::cout << "messagenumber: "; // message number
     std::string line;
-    std::getline(std::cin, line);
-    newBuffer.append(line + '\n' + std::to_string(usedList) + '\n');
+    std::getline(std::cin, line); // read line
+    newBuffer.append(line + '\n' + std::to_string(usedList) + '\n'); // append line and usedList (true or false)
 }
 
-/* int sendingHeader(int& create_socket, int& size)
-{
-    int len = htons(size);
-    if(send(create_socket, &len, sizeof(len), 0) == -1)
-    {
-        perror("send failed");
-        return -1;
-    }
-    return 0;
-}
- */
 bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
 {
     // read username (bash: export ldapuser=<yourUsername>)
@@ -307,8 +271,8 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
     char ldapBindUser[256];
     char rawLdapUser[128];
     std::cout << "Username: ";
-    std::getline(std::cin, username);
-    //std::cout << '\n' <<username.c_str() <<'\n';
+    std::getline(std::cin, username); // read line from cin to username
+
     if (username.size() <= 8)
         strcpy(rawLdapUser, username.c_str());
     else
@@ -319,39 +283,35 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
     // read password (bash: export ldappw=<yourPW>)
     char ldapBindPassword[256];
     strcpy(ldapBindPassword, getpass());
-/*     std::string pw(ldapBindPassword);
-    std::string ldapString(ldapBindUser);
-    newBuffer.append(ldapString + '\n' + pw + '\n' + username + '\n'); */
-    std::string buf;
-    buf.append("CHECK\n");
-    int size = buf.size() + 1;
-    sendAllHeader(create_socket, size);
-    sendAll(create_socket, buf, size);
 
-    /* int byte = recv(create_socket, &size, sizeof(size), 0); // header for initial message
-    if(receiveHandler(byte) == -1)
-        return false; */
-    //if((size = recvAll(create_socket, (char*)size, sizeof(size))))
-    if(recvAllHeader(create_socket, size) == -1)
+    std::string buf;
+    buf.append("CHECK\n"); // append check to buffer
+    int size = buf.size() + 1;
+    if(sendAllHeader(create_socket, size) == -1) // send header with length of message
+        return false;
+    if(sendAll(create_socket, buf, size) == -1) // actual message
+        return false;
+
+    if(recvAllHeader(create_socket, size) == -1) // recv header with length of message
         return false;
     
-    size = ntohs(size); //important
-    char buffer[size];
+    //size = ntohs(size); //important
+    char buffer[size]; // buffer for message, size of message
 
-    if(recvAll(create_socket, buffer, size) == -1)
+    if(recvAll(create_socket, buffer, size) == -1) // actual message
         return false;
     else 
     {
-        buffer[size] = '\0';
+        buffer[size] = '\0'; // add end of string
     }
 
-    if(strncmp(buffer, "ERR", 6) == 0)
+    if(strncmp(buffer, "ERR", 6) == 0) // check if error
     {
-        isBanned = true;
-        return false;
+        isBanned = true; // set isBanned to true
+        return false; 
     }
 
-    isBanned = false;
+    isBanned = false; // set isBanned to false if not banned
     // general
     int rc = 0; // return code
 
@@ -521,63 +481,54 @@ int getch()
 
 int sendAllHeader(int& create_socket, int& size)
 {
-    //std::cout << "size: " << size << '\n';
-    char buffer[sizeof(size)];
-    int len = htons(size);
-    memcpy(buffer, &len, sizeof(len));
-    int total = 0;
-    int sizeofLen = sizeof(len);
+    char buffer[sizeof(size)]; // buffer for message, size of message
+    int len = htons(size); // convert to network byte order
+    memcpy(buffer, &len, sizeof(len)); // copy to buffer
+    int total = 0; // total bytes sent
+    int sizeofLen = sizeof(len); // size of length of message
     while (total <sizeofLen )
     {
-        int sendBytes = send(create_socket, &buffer[total], sizeof(len) - total, 0);
+        int sendBytes = send(create_socket, &buffer[total], sizeof(len) - total, 0); // send header
         if (sendBytes == -1)
         {
             perror("send error");
             return -1;
         }
-        total += sendBytes;
+        total += sendBytes; // increase total bytes sent
     }
     
-    
-    //std::cout << "len: " << len << '\n';
-    /* if(send(create_socket, &len, sizeof(len), 0) == -1)
-    {
-        perror("send failed");
-        return -1;
-    } */
     return 0;
 }
 
 int sendAll(int& create_socket, std::string& newBuffer, int& size)
 {
-    int total = 0;
-    int bytesLeft = size;
-    int sendBytes = 0;
+    int total = 0; // total bytes sent
+    int bytesLeft = size; // bytes left to send
+    int sendBytes = 0; // bytes sent
     while( total < size )
     {
-        sendBytes = send(create_socket, newBuffer.c_str() + total, bytesLeft, 0);
+        sendBytes = send(create_socket, newBuffer.c_str() + total, bytesLeft, 0); // send message
         if (sendBytes == -1)
         {
             perror("send error");
             return -1;
         }
-        total += sendBytes;
-        bytesLeft -= sendBytes;
+        total += sendBytes; // increase total bytes sent
+        bytesLeft -= sendBytes; // decrease bytes left to send
     }
 
-    size = total;
-    //std::cout << "Send: size: " << size << '\n';
+    size = total; // set size to total bytes sent
     return 0;
 }
 
 int receiveHandler(int byte)
 {
-    if (byte == -1)
+    if (byte == -1) // check if error
     {
         perror("recv error");
         return -1;
     }
-    else if (byte == 0)
+    else if (byte == 0) // check if server closed remote socket
     {
         printf("Server closed remote socket\n"); // ignore error
         return -1;
@@ -587,50 +538,46 @@ int receiveHandler(int byte)
 
 int recvAllHeader(int create_socket, int &size)
 {
-    int sizeofHeader = sizeof(size);
-    char buffer[sizeofHeader];
-    int total = 0;
-    int bytesLeft = sizeofHeader;
-    int recvBytes = 0;
-    while (total < sizeofHeader)
+    int sizeofHeader = sizeof(size); // size of header
+    char buffer[sizeofHeader]; // buffer for message, size of message
+    memset(buffer, 0, sizeof(buffer)); // clear buffer
+    int total = 0; // total bytes received
+    int bytesLeft = sizeofHeader; // bytes left to receive
+    int recvBytes = 0; // bytes received
+    while (total < sizeofHeader) 
     {
-        recvBytes = recv(create_socket, &buffer[total], bytesLeft, 0);
+        recvBytes = recv(create_socket, &buffer[total], bytesLeft, 0); // receive header
         if (receiveHandler(recvBytes) == -1)
         {
             return -1;
         }
 
-        total += recvBytes;
-        bytesLeft -= recvBytes;
+        total += recvBytes; // increase total bytes received
+        bytesLeft -= recvBytes; // decrease bytes left to receive
     }
-    buffer[total] = '\0';
-    memcpy(&size, buffer, sizeofHeader);
-    //size = std::stoi(buffer);
-
-    /* int bytes = recv(create_socket, &size, sizeof(size), MSG_WAITFORONE); //receive header
-    if(receiveHandler(bytes) == -1)
-        return -1; */
+    buffer[total] = '\0'; // add end of string
+    memcpy(&size, buffer, sizeofHeader); // copy to size
     return 0;
 }
 
 int recvAll(int create_socket, char* message, int size)
 {
-    int total = 0;
-    int bytesLeft = size;
-    int recvBytes = 0;
+    int total = 0; // total bytes received
+    int bytesLeft = size; // bytes left to receive
+    int recvBytes = 0; // bytes received
 
     while (total < size)
     {
-        recvBytes = recv(create_socket, &message[total], bytesLeft, 0);
+        recvBytes = recv(create_socket, &message[total], bytesLeft, 0); // receive message
         if (receiveHandler(recvBytes) == -1)
         {
             return -1;
         }
 
-        total += recvBytes;
-        bytesLeft -= recvBytes;
+        total += recvBytes; // increase total bytes received
+        bytesLeft -= recvBytes; // decrease bytes left to receive
     }
 
-    size = total;
+    size = total; // set size to total bytes received
     return size;
 }
