@@ -6,10 +6,12 @@ int getch();
 void sendEmail(std::string& newBuffer, std::string& username);
 void listemail(std::string& newBuffer, std::string& username);
 void readOrDel(std::string& newBuffer, std::string& username, bool usedList);
-int sendingHeader(int& create_socket, int& size);
 bool loginToLDAP(std::string& username, int& create_socket, bool& isBanned);
+int sendAllHeader(int& create_socket, int& size);
 int sendAll(int& create_socket, std::string& newBuffer, int& size);
-int receiveHandler(int &byte);
+int receiveHandler(int byte);
+int recvAll(int create_socket, char* message, int size);
+int recvAllHeader(int create_socket, int &size);
 
 #define BUF 1024
 
@@ -76,16 +78,20 @@ int main(int argc, char *argv[])
     printf("Connection with server (%s) established\n", inet_ntoa(address.sin_addr));
 
     int len = 0;
-    int byte = recv(create_socket, &len, sizeof(len), 0); // header for initial message
+    /* int byte = recv(create_socket, &len, sizeof(len), 0); // header for initial message
     
     if(receiveHandler(byte) == -1)
+        return EXIT_FAILURE; */
+    if(recvAllHeader(create_socket, len) == -1)
         return EXIT_FAILURE;
 
     len = ntohs(len); //important
     char buffer[len];
     
-    size = recv(create_socket, buffer, len, 0); // actual initial message
+    /* size = recv(create_socket, buffer, len, 0); // actual initial message
     if(receiveHandler(size) == -1)
+        return EXIT_FAILURE; */
+    if((size = recvAll(create_socket, buffer, len)) == -1)
         return EXIT_FAILURE;
     else 
     {
@@ -133,10 +139,9 @@ int main(int argc, char *argv[])
                 bool login = loginToLDAP(username, create_socket, isBanned);
                 newBuffer.append(username + '\n' + std::to_string(login) + '\n' + std::to_string(isBanned) + '\n');
             }
-                
 
             size = newBuffer.size() + 1;
-            if(sendingHeader(create_socket, size) == -1) // header with length of message
+            if(sendAllHeader(create_socket, size) == -1) // header with length of message
                 break;
                 
             if(sendAll(create_socket, newBuffer, size) == -1) // actual message  
@@ -157,17 +162,22 @@ int main(int argc, char *argv[])
             if(isQuit != 0)
                 break;
             
-            int len = 0, byte = 0;
-            byte = recv(create_socket, &len, sizeof(len), MSG_WAITFORONE); // receive header with length of message
-
+            int len = 0;
+            /* byte = recv(create_socket, &len, sizeof(len), MSG_WAITFORONE); // receive header with length of message
             if(receiveHandler(byte) == -1)
+                break; */
+            if(recvAllHeader(create_socket, len) == -1)
                 break;
 
             len = ntohs(len); //important
             char newBuf[len];
 
-            size = recv(create_socket, newBuf, len, 0); // actual message
+            /* size = recv(create_socket, newBuf, len, 0); // actual message
             if(receiveHandler(size) == -1)
+                break; */
+            /* if(recvAll(create_socket, newBuf, len) == -1) // actual message
+                break; */
+            if((size = recvAll(create_socket, newBuf, len)) == -1)
                 break;
             else
             {
@@ -225,7 +235,11 @@ void sendEmail(std::string& newBuffer, std::string& username)
             std::string line;
             std::getline(std::cin, line);
             if(line.size() > 80)
-                line = line.substr(0, 80); //if higher than 80 --> trunc
+            {
+                std::cout << "subject too long, max 80 characters\n";
+                counter--;
+                break;
+            }
             newBuffer.append(line + '\n');
             break;
         }
@@ -270,7 +284,7 @@ void readOrDel(std::string& newBuffer, std::string& username, bool usedList)
     newBuffer.append(line + '\n' + std::to_string(usedList) + '\n');
 }
 
-int sendingHeader(int& create_socket, int& size)
+/* int sendingHeader(int& create_socket, int& size)
 {
     int len = htons(size);
     if(send(create_socket, &len, sizeof(len), 0) == -1)
@@ -280,7 +294,7 @@ int sendingHeader(int& create_socket, int& size)
     }
     return 0;
 }
-
+ */
 bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
 {
     // read username (bash: export ldapuser=<yourUsername>)
@@ -292,7 +306,7 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
 
     char ldapBindUser[256];
     char rawLdapUser[128];
-    std::cout << "\nUsername: ";
+    std::cout << "Username: ";
     std::getline(std::cin, username);
     //std::cout << '\n' <<username.c_str() <<'\n';
     if (username.size() <= 8)
@@ -311,19 +325,21 @@ bool loginToLDAP(std::string &username, int &create_socket, bool& isBanned)
     std::string buf;
     buf.append("CHECK\n");
     int size = buf.size() + 1;
-    sendingHeader(create_socket, size);
+    sendAllHeader(create_socket, size);
     sendAll(create_socket, buf, size);
 
-    int byte = recv(create_socket, &size, sizeof(size), 0); // header for initial message
+    /* int byte = recv(create_socket, &size, sizeof(size), 0); // header for initial message
     if(receiveHandler(byte) == -1)
-        return EXIT_FAILURE;
+        return false; */
+    //if((size = recvAll(create_socket, (char*)size, sizeof(size))))
+    if(recvAllHeader(create_socket, size) == -1)
+        return false;
     
     size = ntohs(size); //important
     char buffer[size];
 
-    byte = recv(create_socket, buffer, size, 0); // actual initial message
-    if(receiveHandler(byte) == -1)
-        return EXIT_FAILURE;
+    if(recvAll(create_socket, buffer, size) == -1)
+        return false;
     else 
     {
         buffer[size] = '\0';
@@ -503,6 +519,35 @@ int getch()
     return ch;
 }
 
+int sendAllHeader(int& create_socket, int& size)
+{
+    //std::cout << "size: " << size << '\n';
+    char buffer[sizeof(size)];
+    int len = htons(size);
+    memcpy(buffer, &len, sizeof(len));
+    int total = 0;
+    int sizeofLen = sizeof(len);
+    while (total <sizeofLen )
+    {
+        int sendBytes = send(create_socket, &buffer[total], sizeof(len) - total, 0);
+        if (sendBytes == -1)
+        {
+            perror("send error");
+            return -1;
+        }
+        total += sendBytes;
+    }
+    
+    
+    //std::cout << "len: " << len << '\n';
+    /* if(send(create_socket, &len, sizeof(len), 0) == -1)
+    {
+        perror("send failed");
+        return -1;
+    } */
+    return 0;
+}
+
 int sendAll(int& create_socket, std::string& newBuffer, int& size)
 {
     int total = 0;
@@ -521,10 +566,11 @@ int sendAll(int& create_socket, std::string& newBuffer, int& size)
     }
 
     size = total;
+    //std::cout << "Send: size: " << size << '\n';
     return 0;
 }
 
-int receiveHandler(int &byte)
+int receiveHandler(int byte)
 {
     if (byte == -1)
     {
@@ -537,4 +583,54 @@ int receiveHandler(int &byte)
         return -1;
     }
     return 0;
+}
+
+int recvAllHeader(int create_socket, int &size)
+{
+    int sizeofHeader = sizeof(size);
+    char buffer[sizeofHeader];
+    int total = 0;
+    int bytesLeft = sizeofHeader;
+    int recvBytes = 0;
+    while (total < sizeofHeader)
+    {
+        recvBytes = recv(create_socket, &buffer[total], bytesLeft, 0);
+        if (receiveHandler(recvBytes) == -1)
+        {
+            return -1;
+        }
+
+        total += recvBytes;
+        bytesLeft -= recvBytes;
+    }
+    buffer[total] = '\0';
+    memcpy(&size, buffer, sizeofHeader);
+    //size = std::stoi(buffer);
+
+    /* int bytes = recv(create_socket, &size, sizeof(size), MSG_WAITFORONE); //receive header
+    if(receiveHandler(bytes) == -1)
+        return -1; */
+    return 0;
+}
+
+int recvAll(int create_socket, char* message, int size)
+{
+    int total = 0;
+    int bytesLeft = size;
+    int recvBytes = 0;
+
+    while (total < size)
+    {
+        recvBytes = recv(create_socket, &message[total], bytesLeft, 0);
+        if (receiveHandler(recvBytes) == -1)
+        {
+            return -1;
+        }
+
+        total += recvBytes;
+        bytesLeft -= recvBytes;
+    }
+
+    size = total;
+    return size;
 }

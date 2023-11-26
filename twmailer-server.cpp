@@ -19,19 +19,22 @@ void createDir(std::vector<std::string>& parts, const std::string& receiverDir);
 void writeIntoFile(std::vector<std::string>& parts, const std::string& receiverDir);
 void updateIndex(const std::string& filePath, int index);
 void deleteFile(const std::string& pathToFileToDelete);
-int sendingHeader(int current_socket, int& size);
+int sendAllHeader(int& current_socket, int& size);
 std::string readFile(const std::string& pathToFileToRead);
 std::string listFiles(const std::string& receive);
 void *clientCommunication(int current_socket, std::string spoolDirectory, std::string ipstring);
 void signalHandler(int sig);
 //void StartCommunicationThread(std::string spoolDir);
-void writeBanToFile(std::map<std::string, std::time_t>& banMap);
-int receiveHandler(int &byte);
-void searchFileIfBanned( std::map<std::string, std::time_t>& banMap);
+void writeBanToFile(std::time_t& bannedTime, std::string& ipstring);
+int receiveHandler(int byte);
+void writeIntoBanMap( std::map<std::string, std::time_t>& banMap);
 bool handleLogin(std::string& ipString, std::map<std::string, std::time_t>& banMap, int& counterBanned, std::vector<std::string>& parts);
 bool searchIfBanned(std::string& ipstring, std::map<std::string, std::time_t>& banMap);
 void blacklisting(std::string& ipstring, std::map<std::string, std::time_t>& banMap);
 int sendAll(int current_socket, std::string& message, int& size);
+void eraseFromFile(std::time_t& bannedTime);
+int recvAll(int current_socket, char* message, int size);
+int recvAllHeader(int& current_socket, int& size);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -177,10 +180,10 @@ int main(int argc, char *argv[])
 
 void *clientCommunication(int current_socket, std::string spoolDirectory, std::string ipstring)
 {
-    
+    //std::time_t lastLogin = std::time(0);
     std::map<std::string, std::time_t> banMap;
     m.lock();
-    searchFileIfBanned(banMap);
+    writeIntoBanMap(banMap);
     m.unlock();
     
     int size;
@@ -191,7 +194,7 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
     std::string buffer = "Welcome to myserver!\r\nPlease enter your commands...\r\n";
     size = buffer.size() + 1;
     //header for length of message in buffer
-    if(sendingHeader(current_socket, size) == -1)
+    if(sendAllHeader(current_socket, size) == -1)
         return NULL;
 
     if(sendAll(current_socket, buffer, size) == -1)
@@ -201,17 +204,21 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
         /////////////////////////////////////////////////////////////////////////
         // RECEIVE
         int len = 0;
-        int byte;
-        byte = recv(current_socket, &len, sizeof(len), MSG_WAITFORONE); //receive header
-        if(receiveHandler(byte) == -1)
+        /* size = recv(current_socket, &len, sizeof(len), MSG_WAITFORONE); //receive header
+        if(receiveHandler(size) == -1)
+            break; */
+        if((size = recvAllHeader(current_socket, len)) == -1)
             break;
 
         len = ntohs(len);
+        //std::cout << "len: " << len << std::endl;
         char newBuffer[len];
         
-        size = recv(current_socket, newBuffer, len, 0); // real data using the length in header
+        if((size = recvAll(current_socket, newBuffer, len)) == -1) //receive actual string
+            return NULL;
+        /* size = recv(current_socket, newBuffer, len, 0);
         if(receiveHandler(size) == -1)
-            break;
+            break; */
 
         // remove ugly debug message, because of the sent newline of client
         if (newBuffer[size - 2] == '\r' && newBuffer[size - 1] == '\n')
@@ -235,6 +242,7 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
         while (std::getline(stream, line, '\n'))
         {
             // Process the extracted string
+            //std::cout << "line.size()" << line.size() << std::endl;
             parts.emplace_back(line);
             counter++;
         }
@@ -375,7 +383,7 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
 
         int size = message.size() + 1;
 
-        if(sendingHeader(current_socket, size) == -1) // header with length of message
+        if(sendAllHeader(current_socket, size) == -1) // header with length of message
             break;
         
         if(sendAll(current_socket, message, size) == -1) //actual string
@@ -492,6 +500,7 @@ void writeIntoFile(std::vector<std::string>& parts, const std::string& receiverD
                 outputFile << parts[i];
             else
                 outputFile << parts[i] << '\n';
+            //std::cout << parts[i].size() << std::endl;
         }
         outputFile.close();
     }
@@ -601,18 +610,36 @@ std::string readFile(const std::string& pathToFileToRead)
     return message;
 }
 
-int sendingHeader(int current_socket, int& size) //sending header with length of message
+int sendAllHeader(int& current_socket, int& size)
 {
+    //std::cout << "size: " << size << '\n';
+    char buffer[sizeof(size)];
     int len = htons(size);
-    if(send(current_socket, &len, sizeof(len), 0) == -1)
+    memcpy(buffer, &len, sizeof(len));
+    int total = 0;
+    int sizeofLen = sizeof(len);
+    while (total <sizeofLen )
+    {
+        int sendBytes = send(current_socket, &buffer[total], sizeof(len) - total, 0);
+        if (sendBytes == -1)
+        {
+            perror("send error");
+            return -1;
+        }
+        total += sendBytes;
+    }
+    
+    
+    //std::cout << "len: " << len << '\n';
+    /* if(send(create_socket, &len, sizeof(len), 0) == -1)
     {
         perror("send failed");
         return -1;
-    }
+    } */
     return 0;
 }
 
-void writeBanToFile(std::map<std::string, std::time_t>& banMap)
+void writeBanToFile(std::time_t& bannedTime, std::string& ipstring)
 {
     std::string banDir = "banDir";
     if(!fs::exists(banDir)) //if bandir does not exists --> create
@@ -626,12 +653,7 @@ void writeBanToFile(std::map<std::string, std::time_t>& banMap)
     m.lock();
     if (outputFile.is_open())
     {
-        for(auto& i : banMap)
-        {
-            auto& ip = i.first;
-            auto& time = i.second;
-            outputFile << '\n' << ip << ' ' << time ;
-        }
+        outputFile << '\n' << bannedTime << ' ' << ipstring ;
         outputFile.close();
     }
     m.unlock();
@@ -647,7 +669,7 @@ bool searchIfBanned(std::string& ipstring, std::map<std::string, std::time_t>& b
         if(currentTime > bannedTime)
         {
             banMap.erase(ipstring);
-            //TODO search in file and delete
+            eraseFromFile(bannedTime);
         }
         else
         {
@@ -662,11 +684,11 @@ void blacklisting(std::string& ipstring, std::map<std::string, std::time_t>& ban
 {
     std::time_t bannedTime = std::time(0) + 60;
     banMap[ipstring] = bannedTime;
-    writeBanToFile(banMap);
+    writeBanToFile(bannedTime, ipstring);
 
 }
 
-int receiveHandler(int &byte)
+int receiveHandler(int byte)
 {
     if (byte == -1) // check if header has an error
     {
@@ -684,7 +706,7 @@ int receiveHandler(int &byte)
     return 0;
 }
 
-void searchFileIfBanned(std::map<std::string, std::time_t>& banMap)
+void writeIntoBanMap(std::map<std::string, std::time_t>& banMap)
 {
     std::string banDir = "banDir";
     if(!fs::exists(banDir))
@@ -702,7 +724,7 @@ void searchFileIfBanned(std::map<std::string, std::time_t>& banMap)
         {
             std::istringstream stream(line); // Create an input string stream from the buffer
             std::string ip, time;
-            stream >> ip >> time;
+            stream >> time >> ip;
             std::time_t timeT = std::stol(time);
             banMap[ip] = timeT;
         }
@@ -742,7 +764,6 @@ int sendAll(int current_socket, std::string& message, int& size)
         sendBytes = send(current_socket, message.c_str() + total, bytesLeft, 0);
         if (sendBytes == -1)
         {
-            perror("send error");
             return -1;
         }
         total += sendBytes;
@@ -750,5 +771,105 @@ int sendAll(int current_socket, std::string& message, int& size)
     }
 
     size = total;
+    return 0;
+}
+
+void eraseFromFile(std::time_t& bannedTime)
+{
+    std::ifstream inFile("banDir/ban.txt");
+
+    if (!inFile) {
+        std::cerr << "Error opening file: ban.txt" << std::endl;
+        return;
+    }
+
+    std::map<std::string, std::time_t> banMap;
+    std::string line;
+
+    std::getline(inFile, line);
+    while (std::getline(inFile, line)) 
+    {
+        std::istringstream stream(line);
+        std::string ip, time;
+        stream >> time >> ip;
+        banMap[ip] = std::stol(time);
+    }
+
+    inFile.close();
+
+    for (auto it = banMap.begin(); it != banMap.end();)
+    {
+        auto& time = it->second;
+        
+        if (time == bannedTime)
+        {
+            it = banMap.erase(it);  // erase returns the iterator to the next element
+        }
+        else
+        {
+            ++it;  // move to the next element
+        }
+    }
+
+    std::ofstream outputFile("banDir/ban.txt");
+    if (outputFile.is_open())
+    {
+        for(auto& i : banMap)
+        {
+            auto& ip = i.first;
+            auto& time = i.second;
+            outputFile << '\n' << time << ' ' << ip ;
+        }
+        outputFile.close();
+    }
+}
+
+int recvAll(int current_socket, char* message, int size)
+{
+    int total = 0;
+    int bytesLeft = size;
+    int recvBytes = 0;
+    while (total < size)
+    {
+        recvBytes = recv(current_socket, &message[total], bytesLeft, 0);
+        if (receiveHandler(recvBytes) == -1)
+        {
+            return -1;
+        }
+
+        total += recvBytes;
+        bytesLeft -= recvBytes;
+    }
+
+    size = total;
+    //std::cout << "Recv: size: " << size << std::endl;
+    return size;
+}
+
+int recvAllHeader(int& current_socket, int& size)
+{
+    int sizeofHeader = sizeof(size);
+    char buffer[sizeofHeader];
+    int total = 0;
+    int bytesLeft = sizeofHeader;
+    int recvBytes = 0;
+    while (total < sizeofHeader)
+    {
+        recvBytes = recv(current_socket, &buffer[total], bytesLeft, 0);
+        if (receiveHandler(recvBytes) == -1)
+        {
+            return -1;
+        }
+
+        total += recvBytes;
+        bytesLeft -= recvBytes;
+    }
+    buffer[total] = '\0';
+    memcpy(&size, buffer, sizeofHeader);
+    //size = std::stoi(buffer);
+
+    /* int bytes = recv(create_socket, &size, sizeof(size), MSG_WAITFORONE); //receive header
+    if(receiveHandler(bytes) == -1)
+        return -1; */
     return 0;
 }
