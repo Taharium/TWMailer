@@ -214,7 +214,7 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
         
         // receive actual string and check if there is an error
         if((size = recvAll(current_socket, newBuffer, len)) == -1)
-            return NULL;
+            break;
 
         // remove ugly debug message, because of the sent newline of client
         if (newBuffer[size - 2] == '\r' && newBuffer[size - 1] == '\n')
