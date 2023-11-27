@@ -273,12 +273,12 @@ void *clientCommunication(int current_socket, std::string spoolDirectory, std::s
             {
                 // directorypath using receivername (parts[2] is recievername)
                 std::string receiverDir = spoolDirectory + "/" + parts[2]; 
+                m.lock();
                 if(!fs::exists(spoolDirectory)) //if spool does not exists --> create
                 {
-                    m.lock();
                     fs::create_directories(spoolDirectory);
-                    m.unlock();
                 }
+                m.unlock();
                     
                 
                 if(!fs::exists(receiverDir)) //if username-Dir does not exit --> create
@@ -632,12 +632,12 @@ int sendAllHeader(int& current_socket, int& size)
 void writeBanToFile(std::time_t& bannedTime, std::string& ipstring) 
 {
     std::string banDir = "banDir";
+    m.lock();
     if(!fs::exists(banDir)) //if bandir does not exists --> create
     {
-        m.lock();
         fs::create_directories(banDir);
-        m.unlock();
     }
+    m.unlock();
     
     std::ofstream outputFile(banDir + "/ban.txt", std::ios::app);   //open ban.txt to write in apppend mode
     m.lock();
